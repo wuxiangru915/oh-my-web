@@ -8,9 +8,15 @@ export interface ChatDraftImage {
   mimeType: string;
 }
 
+export interface ChatDraftFile {
+  path: string;
+  size: number;
+}
+
 export interface ChatDraft {
   value: string;
   images: ChatDraftImage[];
+  files: ChatDraftFile[];
 }
 
 const drafts = new Map<string, ChatDraft>();
@@ -19,11 +25,12 @@ function cloneDraft(draft: ChatDraft): ChatDraft {
   return {
     value: draft.value,
     images: draft.images.map((image) => ({ ...image })),
+    files: draft.files.map((file) => ({ ...file })),
   };
 }
 
 function isEmptyDraft(draft: ChatDraft): boolean {
-  return !draft.value && draft.images.length === 0;
+  return !draft.value && draft.images.length === 0 && draft.files.length === 0;
 }
 
 export function getDraft(key: string): ChatDraft | null {
@@ -54,6 +61,7 @@ export function mergeRestoredSubmissionDraft(
   submittedImages: ChatDraftImage[] | undefined,
   currentText: string,
   currentImages: ChatDraftImage[],
+  currentFiles: ChatDraftFile[] = [],
 ): ChatDraft {
   const images = [...(submittedImages ?? []), ...currentImages]
     .filter(isBase64ImageWithinLimits)
@@ -63,6 +71,7 @@ export function mergeRestoredSubmissionDraft(
   return {
     value: mergeRestoredSubmissionText(submittedText, currentText),
     images,
+    files: currentFiles.map((file) => ({ ...file })),
   };
 }
 
@@ -71,12 +80,13 @@ export function restoreDraftSubmission(
   text: string,
   images?: ChatDraftImage[],
 ): ChatDraft {
-  const current = getDraft(key) ?? { value: "", images: [] };
+  const current = getDraft(key) ?? { value: "", images: [], files: [] };
   const restored = mergeRestoredSubmissionDraft(
     text,
     images,
     current.value,
     current.images,
+    current.files,
   );
   setDraft(key, restored);
   return restored;
@@ -98,7 +108,7 @@ export function rekeyDraft(
   if (!previous) return next;
 
   const merged = next
-    ? mergeRestoredSubmissionDraft(next.value, next.images, previous.value, previous.images)
+    ? mergeRestoredSubmissionDraft(next.value, next.images, previous.value, previous.images, previous.files)
     : previous;
   setDraft(nextKey, merged);
   return cloneDraft(merged);

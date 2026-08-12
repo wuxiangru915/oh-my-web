@@ -191,12 +191,14 @@ test("keeps a failed first submission recoverable across a composer remount", ()
   assert.deepEqual(restored, {
     value: "failed submission",
     images: [image],
+    files: [],
   });
   assert.deepEqual(
     mergeRestoredSubmissionDraft("failed submission", [image], "new draft", []),
     {
       value: "failed submission\n\nnew draft",
       images: [image],
+      files: [],
     },
   );
 });
@@ -213,16 +215,18 @@ test("moves a provisional new-session draft to the real session key", () => {
   const sessionKey = "session-rekey-test";
   clearDraft(provisionalKey);
   clearDraft(sessionKey);
-  setDraft(provisionalKey, { value: "queued while preflight ran", images: [] });
+  setDraft(provisionalKey, { value: "queued while preflight ran", images: [], files: [] });
 
   assert.deepEqual(rekeyDraft(provisionalKey, sessionKey), {
     value: "queued while preflight ran",
     images: [],
+    files: [],
   });
   assert.equal(getDraft(provisionalKey), null);
   assert.deepEqual(getDraft(sessionKey), {
     value: "queued while preflight ran",
     images: [],
+    files: [],
   });
 
   clearDraft(sessionKey);
@@ -233,16 +237,17 @@ test("rekey keeps a synchronously restored draft when React state is still empty
   const sessionKey = "session-rekey-race";
   clearDraft(provisionalKey);
   clearDraft(sessionKey);
-  setDraft(provisionalKey, { value: "restored before state flush", images: [] });
+  setDraft(provisionalKey, { value: "restored before state flush", images: [], files: [] });
 
   assert.deepEqual(
-    rekeyDraft(provisionalKey, sessionKey, { value: "", images: [] }),
-    { value: "restored before state flush", images: [] },
+    rekeyDraft(provisionalKey, sessionKey, { value: "", images: [], files: [] }),
+    { value: "restored before state flush", images: [], files: [] },
   );
   assert.equal(getDraft(provisionalKey), null);
   assert.deepEqual(getDraft(sessionKey), {
     value: "restored before state flush",
     images: [],
+    files: [],
   });
 
   clearDraft(sessionKey);

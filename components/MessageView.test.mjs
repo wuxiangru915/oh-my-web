@@ -121,3 +121,56 @@ test("renders custom-message images as buttons that open a larger preview", () =
   assert.match(html, /<button[^>]+aria-label="Preview image"[^>]*>/);
   assert.match(html, /<img[^>]+src="data:image\/png;base64,YWJj"/);
 });
+
+test("collapses skill blocks in user messages", () => {
+  const html = renderMessage({
+    role: "user",
+    content: '<skill name="git" location="/home/me/.pi/skills/git/SKILL.md">\nRun the standard git workflow.\n</skill>',
+  });
+
+  // Header is visible with the skill name and location
+  assert.match(html, /skill: git/);
+  assert.match(html, /\/home\/me\/\.pi\/skills\/git\/SKILL\.md/);
+  // The verbose body is collapsed by default
+  assert.doesNotMatch(html, /Run the standard git workflow/);
+});
+
+test("keeps user messages without skill blocks intact", () => {
+  const html = renderMessage({
+    role: "user",
+    content: "Please run the git workflow",
+  });
+
+  assert.match(html, /Please run the git workflow/);
+});
+
+test("keeps text around collapsed skill blocks", () => {
+  const html = renderMessage({
+    role: "user",
+    content: 'intro\n\n<skill name="git" location="/x/SKILL.md">\nSecret body text.\n</skill>\n\noutro',
+  });
+
+  assert.match(html, /intro/);
+  assert.match(html, /outro/);
+  assert.doesNotMatch(html, /Secret body text/);
+});
+
+test("renders attachment lines as file cards instead of raw paths", () => {
+  const html = renderMessage({
+    role: "user",
+    content: "see the file\n\n[附件] /home/me/.local/share/pi-web/attachments/report.pdf",
+  });
+
+  assert.match(html, /report\.pdf/);
+  assert.match(html, /\/api\/attachments\?path=/);
+  assert.doesNotMatch(html, />[^<]*\.local\/share\/pi-web/);
+});
+
+test("keeps user messages without attachments intact", () => {
+  const html = renderMessage({
+    role: "user",
+    content: "just text",
+  });
+
+  assert.match(html, /just text/);
+});

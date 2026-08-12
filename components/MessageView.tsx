@@ -12,6 +12,8 @@ import { isEditToolName } from "@/lib/tool-names";
 import { TurnWrittenFiles } from "./TurnWrittenFiles";
 import type { WrittenFile } from "@/lib/turn-written-files";
 import { skillExpansionToCommand } from "@/lib/slash-display";
+import { splitSkillBlocks } from "@/lib/skill-block";
+import { splitAttachmentLinks, fileBaseName } from "@/lib/file-attachments";
 import type {
   AgentMessage,
   UserMessage,
@@ -246,6 +248,135 @@ function haveSameRelevantToolResults(
   return true;
 }
 
+type UserContentSegment =
+  | { type: "text"; text: string }
+  | { type: "skill"; name: string; location: string; content: string }
+  | { type: "attachment"; path: string };
+
+/**
+ * Splits user message text into renderable segments: collapses verbose
+ * <skill>…</skill> blocks (pi skill expansion) and turns "[附件] <path>"
+ * lines into downloadable file cards.
+ */
+function buildUserContentSegments(content: string): UserContentSegment[] {
+  const segments: UserContentSegment[] = [];
+  for (const seg of splitSkillBlocks(content)) {
+    if (seg.type === "skill") {
+      segments.push({ type: "skill", name: seg.name, location: seg.location, content: seg.content });
+      continue;
+    }
+    for (const sub of splitAttachmentLinks(seg.text)) {
+      if (sub.type === "attachment") {
+        segments.push({ type: "attachment", path: sub.path });
+      } else if (sub.text) {
+        segments.push({ type: "text", text: sub.text });
+      }
+    }
+  }
+  return segments;
+}
+
+function SkillBlock({ name, location, content, cwd, onOpenFile }: {
+  name: string;
+  location: string;
+  content: string;
+  cwd?: string;
+  onOpenFile?: (filePath: string) => void;
+}) {
+  const { t } = useI18n();
+  const [expanded, setExpanded] = useState(false);
+  const lineCount = content.split("\n").length;
+  return (
+    <div
+      style={{
+        border: "1px solid var(--border)",
+        borderRadius: 6,
+        overflow: "hidden",
+        fontSize: 13,
+      }}
+    >
+      <button
+        onClick={() => setExpanded((v) => !v)}
+        title={expanded ? t("i18n.collapse") : t("i18n.expand")}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 6,
+          width: "100%",
+          padding: "6px 10px",
+          background: "var(--bg-panel)",
+          border: "none",
+          color: "var(--text-muted)",
+          cursor: "pointer",
+          fontSize: 12,
+          textAlign: "left",
+        }}
+      >
+        <span style={{ flexShrink: 0 }}>{expanded ? "▾" : "▸"}</span>
+        <span style={{ fontWeight: 600, color: "var(--text)", flexShrink: 0 }}>skill: {name}</span>
+        {location && (
+          <span
+            style={{
+              color: "var(--text-dim)",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+              minWidth: 0,
+              flex: 1,
+            }}
+          >
+            {location}
+          </span>
+        )}
+        <span style={{ marginLeft: "auto", flexShrink: 0, color: "var(--text-dim)", whiteSpace: "nowrap" }}>
+          {lineCount} {t("chat.lines")} · {expanded ? t("i18n.collapse") : t("i18n.expand")}
+        </span>
+      </button>
+      {expanded && (
+        <div
+          style={{
+            padding: "8px 10px",
+            borderTop: "1px solid var(--border)",
+            maxHeight: 420,
+            overflowY: "auto",
+            background: "var(--bg)",
+          }}
+        >
+          <SafeMarkdownBody className="markdown-user-message" cwd={cwd} onOpenFile={onOpenFile}>{content}</SafeMarkdownBody>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AttachmentCard({ path }: { path: string }) {
+  const name = fileBaseName(path);
+  return (
+    <a
+      href={`/api/attachments?path=${encodeURIComponent(path)}`}
+      download
+      title={path}
+      style={{
+        display: "inline-flex", alignItems: "center", gap: 6,
+        padding: "4px 10px",
+        background: "var(--bg-panel)",
+        border: "1px solid var(--border)",
+        borderRadius: 6,
+        fontSize: 12,
+        color: "var(--text)",
+        textDecoration: "none",
+        maxWidth: 260,
+      }}
+    >
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, color: "var(--text-muted)" }}>
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+        <polyline points="14 2 14 8 20 8" />
+      </svg>
+      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>{name}</span>
+    </a>
+  );
+}
+
 export const MessageView = memo(function MessageView({ message, isStreaming, toolResults, modelNames, cwd, onOpenFile, entryId, onFork, forking, onNavigate, prevAssistantEntryId, onEditContent, showTimestamp, prevTimestamp, sessionId, writtenFiles }: Props) {
   if (message.role === "user") {
     return <UserMessageView message={message as UserMessage} cwd={cwd} onOpenFile={onOpenFile} entryId={entryId} onFork={onFork} forking={forking} onNavigate={onNavigate} prevAssistantEntryId={prevAssistantEntryId} onEditContent={onEditContent} />;
@@ -327,6 +458,9 @@ function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, o
   const canFork = !!entryId && !!onFork;
   const copyTarget = commandText ?? content;
   const editTarget = commandText ? replaceUserMessageText(message, commandText) : message;
+
+  const contentSegments = buildUserContentSegments(content);
+  const hasSpecialSegments = contentSegments.some((s) => s.type !== "text");
 
   const imageBlocksNode = imageBlocks.length > 0 && (
     <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: content ? 8 : 0 }}>
@@ -448,7 +582,21 @@ function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, o
           ) : (
           <>
           {imageBlocksNode}
-          {content && <SafeMarkdownBody className="markdown-user-message" cwd={cwd} onOpenFile={onOpenFile}>{content}</SafeMarkdownBody>}
+          {content && (hasSpecialSegments ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              {contentSegments.map((seg, i) =>
+                seg.type === "skill" ? (
+                  <SkillBlock key={i} name={seg.name} location={seg.location} content={seg.content} cwd={cwd} onOpenFile={onOpenFile} />
+                ) : seg.type === "attachment" ? (
+                  <AttachmentCard key={i} path={seg.path} />
+                ) : seg.text ? (
+                  <SafeMarkdownBody key={i} className="markdown-user-message" cwd={cwd} onOpenFile={onOpenFile}>{seg.text}</SafeMarkdownBody>
+                ) : null,
+              )}
+            </div>
+          ) : (
+            <SafeMarkdownBody className="markdown-user-message" cwd={cwd} onOpenFile={onOpenFile}>{content}</SafeMarkdownBody>
+          ))}
           </>
           )}
         </div>
