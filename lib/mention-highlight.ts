@@ -13,7 +13,11 @@ export type HighlightSegment =
   | { kind: "text"; text: string }
   | { kind: MentionKind; text: string };
 
-const MENTION_RE = /(\/skill:[\w.-]+)|(\/[a-zA-Z][\w.-]*)|(@"[^"]*")|(@[^\s@/]+)/g;
+// A slash command only counts as a mention when it starts a new token. The
+// negative lookbehind rejects URLs and paths: "https://…/path" must not be
+// chopped into /command chips (the slash after `:` or a letter is a path
+// separator, not a command).
+const MENTION_RE = /(?<![\w:./])(\/skill:[\w.-]+)|(?<![\w:./])(\/[a-zA-Z][\w.-]*)|(@"[^"]*")|(@[^\s@/]+)/g;
 
 /** Split `text` into plain-text and mention segments, preserving order. */
 export function parseMentions(text: string): HighlightSegment[] {
