@@ -388,11 +388,14 @@ function InlineText({ text, cwd, onOpenFile }: {
 }) {
   // Only fall back to the block-level markdown renderer for text that actually
   // contains markdown constructs; plain prose stays inline so chips flow with it.
-  const hasMarkdown = /(\n|\*\*|`|^#{1,6}\s|^\s*[-*+]\s)/m.test(text);
+  // A newline left over from a preceding <skill>/attachment block is not real
+  // markdown — collapse it to a space so the prose joins the chip on one line.
+  const trimmed = text.trim();
+  const hasMarkdown = /(\*\*|`|#{1,6}\s|^\s*[-*+]\s|^\s*>\s)/m.test(trimmed) || trimmed.includes("\n");
   if (hasMarkdown) {
     return <SafeMarkdownBody className="markdown-user-message" cwd={cwd} onOpenFile={onOpenFile}>{text}</SafeMarkdownBody>;
   }
-  return <span style={{ whiteSpace: "pre-wrap" }}>{text}</span>;
+  return <span style={{ whiteSpace: "pre-wrap" }}>{text.replace(/\n+/g, " ")}</span>;
 }
 
 function CommandMentionCard({ name }: { name: string }) {
