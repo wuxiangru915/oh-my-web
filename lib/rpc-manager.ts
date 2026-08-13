@@ -5,6 +5,7 @@ import { randomUUID } from "crypto";
 import { existsSync, realpathSync, writeFileSync } from "fs";
 import { resolve } from "path";
 import { validateAgentImages } from "./image-attachments";
+import { expandAllSkillCommands } from "./multi-skill-expansion";
 import { invalidateModelsCache } from "./models-cache";
 import { resolveVisibleModels, selectInitialModelScope } from "./model-scope";
 import { cacheSessionPath, invalidateSessionListCache } from "./session-reader";
@@ -445,7 +446,20 @@ export class AgentSessionWrapper {
           notifyRunningChange();
           let prompt: Promise<void>;
           try {
-            prompt = this.inner.prompt(command.message as string, {
+            // Expand every /skill:name command in the message. pi natively
+            // expands only a single leading skill command, so multiple skills
+            // in one message need to be expanded here (in the server process,
+            // where the SDK's resource loader is available).
+            const rawMessage = command.message as string;
+            const message = expandAllSkillCommands(
+              rawMessage,
+              this.inner.resourceLoader.getSkills().skills.map((s) => ({
+                name: s.name,
+                filePath: s.sourceInfo.path,
+                baseDir: s.sourceInfo.baseDir ?? "",
+              })),
+            );
+            prompt = this.inner.prompt(message, {
               ...(promptImages?.length ? { images: promptImages } : {}),
               ...(streamingBehavior ? { streamingBehavior } : {}),
               source: "rpc",

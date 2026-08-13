@@ -370,27 +370,23 @@ function TreeNode({
             title={t("files.insertPath")}
             style={{
               position: "absolute",
-              right: !node.isDir ? 28 : 4,
+              right: !node.isDir ? 52 : 4,
               top: "50%",
               transform: "translateY(-50%)",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              gap: 4,
-              padding: "0 8px",
+              padding: "0 5px",
               height: 20,
               background: "var(--bg-panel)",
               border: "1px solid var(--border)",
               borderRadius: 4,
               color: "var(--accent)",
               cursor: "pointer",
-              fontSize: 11,
-              fontWeight: 600,
               whiteSpace: "nowrap",
             }}
           >
             <MentionIcon />
-            {t("files.mention")}
           </button>
         )}
         {hovered && !node.isDir && onRequestRefresh && (
