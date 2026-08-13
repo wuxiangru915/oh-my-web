@@ -118,25 +118,25 @@ const ANCHORED_MENU_GAP = 8;
 // change (a bolder glyph is wider than the textarea's normal-weight glyph).
 const MENTION_CHIP_STYLES: Record<MentionKind, React.CSSProperties> = {
   skill: {
-    background: "rgba(129,140,248,0.16)",
-    color: "rgb(165,180,252)",
+    background: "rgba(59,130,246,0.15)",
+    color: "rgb(96,165,250)",
     borderRadius: 4,
-    padding: "0 3px",
-    margin: "0 -3px",
+    padding: "0 2px",
+    margin: "0 -2px",
   },
   command: {
     background: "rgba(59,130,246,0.15)",
     color: "rgb(96,165,250)",
     borderRadius: 4,
-    padding: "0 3px",
-    margin: "0 -3px",
+    padding: "0 2px",
+    margin: "0 -2px",
   },
   file: {
-    background: "rgba(234,179,8,0.14)",
-    color: "rgb(234,179,8)",
+    background: "rgba(59,130,246,0.15)",
+    color: "rgb(96,165,250)",
     borderRadius: 4,
-    padding: "0 3px",
-    margin: "0 -3px",
+    padding: "0 2px",
+    margin: "0 -2px",
   },
 };
 

@@ -14,6 +14,7 @@ import type { WrittenFile } from "@/lib/turn-written-files";
 import { skillExpansionToCommand } from "@/lib/slash-display";
 import { splitSkillBlocks } from "@/lib/skill-block";
 import { splitAttachmentLinks, fileBaseName } from "@/lib/file-attachments";
+import { parseMentions } from "@/lib/mention-highlight";
 import type {
   AgentMessage,
   UserMessage,
@@ -251,13 +252,30 @@ function haveSameRelevantToolResults(
 type UserContentSegment =
   | { type: "text"; text: string }
   | { type: "skill"; name: string; location: string; content: string }
-  | { type: "attachment"; path: string };
+  | { type: "attachment"; path: string }
+  | { type: "fileMention"; path: string }
+  | { type: "commandMention"; name: string };
 
 /**
  * Splits user message text into renderable segments: collapses verbose
  * <skill>…</skill> blocks (pi skill expansion) and turns "[附件] <path>"
  * lines into downloadable file cards.
  */
+function splitUserMentions(text: string): UserContentSegment[] {
+  const result: UserContentSegment[] = [];
+  for (const seg of parseMentions(text)) {
+    if (seg.kind === "file") {
+      const path = seg.text.replace(/^@/, "").replace(/^"(.*)"$/, "$1");
+      result.push({ type: "fileMention", path });
+    } else if (seg.kind === "command") {
+      result.push({ type: "commandMention", name: seg.text.slice(1) });
+    } else {
+      result.push({ type: "text", text: seg.text });
+    }
+  }
+  return result;
+}
+
 function buildUserContentSegments(content: string): UserContentSegment[] {
   const segments: UserContentSegment[] = [];
   for (const seg of splitSkillBlocks(content)) {
@@ -269,7 +287,7 @@ function buildUserContentSegments(content: string): UserContentSegment[] {
       if (sub.type === "attachment") {
         segments.push({ type: "attachment", path: sub.path });
       } else if (sub.text) {
-        segments.push({ type: "text", text: sub.text });
+        segments.push(...splitUserMentions(sub.text));
       }
     }
   }
@@ -374,6 +392,64 @@ function AttachmentCard({ path }: { path: string }) {
       </svg>
       <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>{name}</span>
     </a>
+  );
+}
+
+function FileMentionCard({ path, cwd, onOpenFile }: {
+  path: string;
+  cwd?: string;
+  onOpenFile?: (filePath: string) => void;
+}) {
+  const name = fileBaseName(path);
+  const absolutePath = cwd && !path.startsWith("/")
+    ? `${cwd.replace(/\/+$/, "")}/${path}`
+    : path;
+  const clickable = Boolean(onOpenFile);
+  return (
+    <div
+      role={clickable ? "button" : undefined}
+      tabIndex={clickable ? 0 : undefined}
+      onClick={clickable ? () => onOpenFile!(absolutePath) : undefined}
+      onKeyDown={clickable ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpenFile!(absolutePath); } } : undefined}
+      title={path}
+      style={{
+        display: "inline-flex", alignItems: "center", gap: 6,
+        padding: "4px 10px",
+        background: "var(--bg-panel)",
+        border: "1px solid var(--border)",
+        borderRadius: 6,
+        fontSize: 12,
+        color: "var(--text)",
+        maxWidth: "100%",
+        cursor: clickable ? "pointer" : "default",
+      }}
+    >
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, color: "var(--accent)" }}>
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+        <polyline points="14 2 14 8 20 8" />
+      </svg>
+      <span style={{ fontWeight: 600, flexShrink: 0 }}>@{name}</span>
+      <span style={{ color: "var(--text-dim)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>{path}</span>
+    </div>
+  );
+}
+
+function CommandMentionCard({ name }: { name: string }) {
+  return (
+    <div
+      style={{
+        display: "inline-flex", alignItems: "center", gap: 4,
+        padding: "4px 10px",
+        background: "var(--bg-panel)",
+        border: "1px solid var(--border)",
+        borderRadius: 6,
+        fontSize: 12,
+        color: "var(--text)",
+      }}
+    >
+      <span style={{ color: "var(--text-dim)", fontFamily: "var(--font-mono)", fontSize: 11 }}>/</span>
+      <span style={{ fontWeight: 600 }}>{name}</span>
+    </div>
   );
 }
 
@@ -520,6 +596,10 @@ function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, o
                   <SkillBlock key={i} name={seg.name} location={seg.location} content={seg.content} cwd={cwd} onOpenFile={onOpenFile} />
                 ) : seg.type === "attachment" ? (
                   <AttachmentCard key={i} path={seg.path} />
+                ) : seg.type === "fileMention" ? (
+                  <FileMentionCard key={i} path={seg.path} cwd={cwd} onOpenFile={onOpenFile} />
+                ) : seg.type === "commandMention" ? (
+                  <CommandMentionCard key={i} name={seg.name} />
                 ) : seg.text ? (
                   <SafeMarkdownBody key={i} className="markdown-user-message" cwd={cwd} onOpenFile={onOpenFile}>{seg.text}</SafeMarkdownBody>
                 ) : null,
