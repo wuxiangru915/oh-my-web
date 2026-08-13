@@ -294,37 +294,22 @@ function buildUserContentSegments(content: string): UserContentSegment[] {
   return segments;
 }
 
-function SkillChip({ name, location }: { name: string; location?: string }) {
+function SkillChip({ name }: { name: string }) {
   return (
     <div
       style={{
         display: "inline-flex",
         alignItems: "center",
-        gap: 6,
         padding: "4px 10px",
         background: "rgba(59,130,246,0.15)",
         border: "1px solid rgba(59,130,246,0.35)",
         borderRadius: 6,
         fontSize: 12,
         color: "rgb(96,165,250)",
+        alignSelf: "flex-start",
       }}
     >
       <span style={{ fontWeight: 600 }}>skill: {name}</span>
-      {location && (
-        <span
-          style={{
-            color: "var(--text-dim)",
-            fontFamily: "var(--font-mono)",
-            fontSize: 11,
-            maxWidth: 200,
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-          }}
-        >
-          {location}
-        </span>
-      )}
     </div>
   );
 }
@@ -555,7 +540,7 @@ function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, o
             <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
               {contentSegments.map((seg, i) =>
                 seg.type === "skill" ? (
-                  <SkillChip key={i} name={seg.name} location={seg.location} />
+                  <SkillChip key={i} name={seg.name} />
                 ) : seg.type === "attachment" ? (
                   <AttachmentCard key={i} path={seg.path} />
                 ) : seg.type === "fileMention" ? (
