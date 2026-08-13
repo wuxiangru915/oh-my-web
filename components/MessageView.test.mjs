@@ -58,16 +58,19 @@ test("renders partial assistant content before the provider error", () => {
   assert.match(html, /Error: Connection closed/);
 });
 
-test("renders a complete SDK skill expansion as a collapsible skill block", () => {
+test("renders a complete SDK skill expansion as a chip (no collapsible block)", () => {
   const html = renderMessage({
     role: "user",
     content: COMPLETE_SKILL_EXPANSION,
   });
 
   assert.match(html, /skill: review/);
-  assert.match(html, /\/skills\/review\/SKILL\.md/);
-  assert.match(html, /src\/main\.ts/);
+  // The skill renders as a compact chip: no source path, no inline body.
+  assert.doesNotMatch(html, /\/skills\/review\/SKILL\.md/);
   assert.doesNotMatch(html, /Review the supplied files/);
+  assert.doesNotMatch(html, /References are relative/);
+  // Text outside the <skill> block is still rendered.
+  assert.match(html, /src\/main\.ts/);
 });
 
 test("does not collapse incomplete skill-looking user text", () => {
@@ -122,16 +125,15 @@ test("renders custom-message images as buttons that open a larger preview", () =
   assert.match(html, /<img[^>]+src="data:image\/png;base64,YWJj"/);
 });
 
-test("collapses skill blocks in user messages", () => {
+test("renders skill blocks as compact chips in user messages", () => {
   const html = renderMessage({
     role: "user",
     content: '<skill name="git" location="/home/me/.pi/skills/git/SKILL.md">\nRun the standard git workflow.\n</skill>',
   });
 
-  // Header is visible with the skill name and location
+  // Chip shows the skill name only; the location is dropped and the body hidden.
   assert.match(html, /skill: git/);
-  assert.match(html, /\/home\/me\/\.pi\/skills\/git\/SKILL\.md/);
-  // The verbose body is collapsed by default
+  assert.doesNotMatch(html, /\/home\/me\/\.pi\/skills\/git\/SKILL\.md/);
   assert.doesNotMatch(html, /Run the standard git workflow/);
 });
 

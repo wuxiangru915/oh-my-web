@@ -300,15 +300,16 @@ function SkillChip({ name }: { name: string }) {
       style={{
         display: "inline-flex",
         alignItems: "center",
+        gap: 6,
         padding: "4px 10px",
-        background: "rgba(59,130,246,0.15)",
-        border: "1px solid rgba(59,130,246,0.35)",
+        background: "var(--bg-panel)",
+        border: "1px solid var(--border)",
         borderRadius: 6,
         fontSize: 12,
-        color: "rgb(96,165,250)",
-        alignSelf: "flex-start",
+        color: "var(--text)",
       }}
     >
+      <span style={{ color: "var(--accent)", flexShrink: 0, fontSize: 11 }}>✦</span>
       <span style={{ fontWeight: 600 }}>skill: {name}</span>
     </div>
   );
@@ -358,7 +359,7 @@ function FileMentionCard({ path, cwd, onOpenFile }: {
       tabIndex={clickable ? 0 : undefined}
       onClick={clickable ? () => onOpenFile!(absolutePath) : undefined}
       onKeyDown={clickable ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpenFile!(absolutePath); } } : undefined}
-      title={path}
+      title={absolutePath}
       style={{
         display: "inline-flex", alignItems: "center", gap: 6,
         padding: "4px 10px",
@@ -376,9 +377,22 @@ function FileMentionCard({ path, cwd, onOpenFile }: {
         <polyline points="14 2 14 8 20 8" />
       </svg>
       <span style={{ fontWeight: 600, flexShrink: 0 }}>@{name}</span>
-      <span style={{ color: "var(--text-dim)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>{path}</span>
     </div>
   );
+}
+
+function InlineText({ text, cwd, onOpenFile }: {
+  text: string;
+  cwd?: string;
+  onOpenFile?: (filePath: string) => void;
+}) {
+  // Only fall back to the block-level markdown renderer for text that actually
+  // contains markdown constructs; plain prose stays inline so chips flow with it.
+  const hasMarkdown = /(\n|\*\*|`|^#{1,6}\s|^\s*[-*+]\s)/m.test(text);
+  if (hasMarkdown) {
+    return <SafeMarkdownBody className="markdown-user-message" cwd={cwd} onOpenFile={onOpenFile}>{text}</SafeMarkdownBody>;
+  }
+  return <span style={{ whiteSpace: "pre-wrap" }}>{text}</span>;
 }
 
 function CommandMentionCard({ name }: { name: string }) {
@@ -537,7 +551,7 @@ function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, o
         >
           {imageBlocksNode}
           {content && (hasSpecialSegments ? (
-            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <div style={{ lineHeight: 1.8 }}>
               {contentSegments.map((seg, i) =>
                 seg.type === "skill" ? (
                   <SkillChip key={i} name={seg.name} />
@@ -548,7 +562,7 @@ function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, o
                 ) : seg.type === "commandMention" ? (
                   <CommandMentionCard key={i} name={seg.name} />
                 ) : seg.text ? (
-                  <SafeMarkdownBody key={i} className="markdown-user-message" cwd={cwd} onOpenFile={onOpenFile}>{seg.text}</SafeMarkdownBody>
+                  <InlineText key={i} text={seg.text} cwd={cwd} onOpenFile={onOpenFile} />
                 ) : null,
               )}
             </div>
