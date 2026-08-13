@@ -112,27 +112,31 @@ const ANCHORED_MENU_GAP = 8;
 
 // Chips used by the composer highlight layer to distinguish invoked skills,
 // slash commands, and @-file mentions from the surrounding prompt text.
+// IMPORTANT: the chip must not change character width, or the caret in the
+// transparent textarea drifts out of alignment with the highlight layer.
+// Horizontal padding is cancelled by an equal negative margin; no font-weight
+// change (a bolder glyph is wider than the textarea's normal-weight glyph).
 const MENTION_CHIP_STYLES: Record<MentionKind, React.CSSProperties> = {
   skill: {
     background: "rgba(129,140,248,0.16)",
     color: "rgb(165,180,252)",
     borderRadius: 4,
-    padding: "1px 3px",
-    fontWeight: 600,
+    padding: "0 3px",
+    margin: "0 -3px",
   },
   command: {
     background: "rgba(59,130,246,0.15)",
     color: "rgb(96,165,250)",
     borderRadius: 4,
-    padding: "1px 3px",
-    fontWeight: 600,
+    padding: "0 3px",
+    margin: "0 -3px",
   },
   file: {
     background: "rgba(234,179,8,0.14)",
     color: "rgb(234,179,8)",
     borderRadius: 4,
-    padding: "1px 3px",
-    fontWeight: 600,
+    padding: "0 3px",
+    margin: "0 -3px",
   },
 };
 
