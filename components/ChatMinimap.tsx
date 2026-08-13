@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback, useMemo, type RefObject } from "react";
-import type { AgentMessage, TextContent, UserMessage } from "@/lib/types";
-import styles from "./ChatMinimap.module.css";
+import type { AgentMessage, AssistantMessage, TextContent, ToolCallContent, UserMessage } from "@/lib/types";
 
 interface Props {
   messages: AgentMessage[];
@@ -12,21 +11,14 @@ interface Props {
   onRevealHistory: () => void;
 }
 
-const MINIMAP_WIDTH = 36;
-const MAX_NODE_GAP = 50;
-const MINIMAP_PADDING = 12;
-const PREVIEW_HIDE_DELAY = 250;
+const PANEL_WIDTH = 240;
+const COLLAPSED_WIDTH = 28;
 const NAVIGATION_ACTIVE_LOCK_MS = 1600;
 
-interface TurnInfo {
-  userMessage: UserMessage;
+interface EntryInfo {
+  role: "user" | "assistant";
+  text: string;
   scrollTop: number | null;
-}
-
-interface NodeInfo {
-  topRatio: number;
-  targetTurn: TurnInfo;
-  index: number;
 }
 
 function getUserPreview(message: UserMessage): string {
@@ -38,45 +30,35 @@ function getUserPreview(message: UserMessage): string {
     .trim();
 }
 
-function createTurnNodes(turns: TurnInfo[]): NodeInfo[] {
-  return turns.map((turn, index) => ({
-    topRatio: 0,
-    targetTurn: turn,
-    index,
-  }));
+function getAssistantPreview(message: AssistantMessage | Partial<AgentMessage>): string {
+  const content = (message as AssistantMessage).content;
+  if (!Array.isArray(content)) return "";
+  const text = content
+    .filter((block): block is TextContent => block.type === "text")
+    .map((block) => block.text)
+    .join("\n")
+    .trim();
+  if (text) return text;
+  const tool = content.find((block): block is ToolCallContent => block.type === "toolCall");
+  return tool ? `⚙ ${tool.toolName}` : "";
 }
 
-interface NodeLayout {
-  nodes: NodeInfo[];
-  gap: number;
-  fillsHeight: boolean;
+function UserIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 1 }} aria-hidden="true">
+      <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+      <circle cx="12" cy="7" r="4" />
+    </svg>
+  );
 }
 
-function layoutNodes(allNodes: NodeInfo[], minimapHeight: number): NodeLayout {
-  if (allNodes.length === 0) {
-    return { nodes: [], gap: MAX_NODE_GAP, fillsHeight: false };
-  }
-
-  const height = Math.max(1, minimapHeight);
-  const usableHeight = Math.max(0, height - MINIMAP_PADDING * 2);
-  if (allNodes.length === 1) {
-    return {
-      nodes: [{ ...allNodes[0], topRatio: MINIMAP_PADDING / height }],
-      gap: MAX_NODE_GAP,
-      fillsHeight: false,
-    };
-  }
-
-  const naturalGap = usableHeight / (allNodes.length - 1);
-  const gap = Math.min(MAX_NODE_GAP, naturalGap);
-  return {
-    nodes: allNodes.map((node, index) => ({
-      ...node,
-      topRatio: (MINIMAP_PADDING + index * gap) / height,
-    })),
-    gap,
-    fillsHeight: naturalGap <= MAX_NODE_GAP,
-  };
+function SparkleIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 1 }} aria-hidden="true">
+      <path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3z" />
+      <path d="M19 15l.9 2.1L22 18l-2.1.9L19 21l-.9-2.1L16 18l2.1-.9L19 15z" />
+    </svg>
+  );
 }
 
 export function ChatMinimap({
@@ -86,26 +68,13 @@ export function ChatMinimap({
   messageRefs,
   onRevealHistory,
 }: Props) {
-  const [visible, setVisible] = useState(false);
-  const [hidden, setHidden] = useState(false);
-  const [allNodes, setAllNodes] = useState<NodeInfo[]>([]);
+  const [expanded, setExpanded] = useState(false);
+  const [entries, setEntries] = useState<EntryInfo[]>([]);
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
-  const [minimapHeight, setMinimapHeight] = useState(600);
-  const [minimapHovered, setMinimapHovered] = useState(false);
-  const [mouseYRatio, setMouseYRatio] = useState<number | null>(null);
-  const draggingRef = useRef(false);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const allNodesRef = useRef<NodeInfo[]>([]);
-  const nodeLayoutRef = useRef<NodeLayout>({
-    nodes: [],
-    gap: MAX_NODE_GAP,
-    fillsHeight: false,
-  });
-  const previewBoxRef = useRef<HTMLDivElement>(null);
-  const previewItemRefs = useRef(new Map<number, HTMLDivElement>());
-  const previewHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const activeNodeLockRef = useRef<{ index: number; until: number } | null>(null);
-  const pendingNavigationRef = useRef<{ nodeIndex: number } | null>(null);
+  const entriesRef = useRef<EntryInfo[]>([]);
+  const activeLockRef = useRef<{ index: number; until: number } | null>(null);
+  const pendingNavRef = useRef<{ index: number } | null>(null);
+  const listRef = useRef<HTMLDivElement>(null);
 
   const allMessages = useMemo(
     () => (streamingMessage ? [...messages, streamingMessage] : messages) as (AgentMessage | Partial<AgentMessage>)[],
@@ -114,249 +83,115 @@ export function ChatMinimap({
   const allMessagesRef = useRef(allMessages);
   allMessagesRef.current = allMessages;
 
-  const nodeLayout = useMemo(
-    () => layoutNodes(allNodes, minimapHeight),
-    [allNodes, minimapHeight],
-  );
-  const { nodes: positionedNodes, gap: nodeGap } = nodeLayout;
-  nodeLayoutRef.current = nodeLayout;
+  const measure = useCallback(() => {
+    const scrollEl = scrollContainer.current;
+    if (!scrollEl) return;
 
-  const lockActiveNode = useCallback((index: number) => {
-    activeNodeLockRef.current = {
-      index,
-      until: Date.now() + NAVIGATION_ACTIVE_LOCK_MS,
-    };
-    setActiveIndex(index);
-  }, []);
+    const refs = messageRefs.current;
+    const containerRect = scrollEl.getBoundingClientRect();
+    const next: EntryInfo[] = [];
+    let refIndex = 0;
 
-  const syncActiveNode = useCallback((scrollEl: HTMLDivElement, nextNodes: NodeInfo[]) => {
-    const activeLock = activeNodeLockRef.current;
-    if (activeLock && Date.now() < activeLock.until) {
-      setActiveIndex(activeLock.index);
+    for (const message of allMessagesRef.current) {
+      if (message.role !== "user" && message.role !== "assistant") continue;
+      const element = refs?.[refIndex];
+      refIndex += 1;
+      const rect = element?.getBoundingClientRect();
+      const scrollTop = rect ? rect.top - containerRect.top + scrollEl.scrollTop : null;
+      if (message.role === "user") {
+        next.push({ role: "user", text: getUserPreview(message as UserMessage), scrollTop });
+      } else {
+        next.push({ role: "assistant", text: getAssistantPreview(message), scrollTop });
+      }
+    }
+
+    entriesRef.current = next;
+    setEntries(next);
+  }, [messageRefs, scrollContainer]);
+
+  const syncActive = useCallback(() => {
+    const scrollEl = scrollContainer.current;
+    if (!scrollEl) return;
+    const lock = activeLockRef.current;
+    if (lock && Date.now() < lock.until) {
+      setActiveIndex(lock.index);
       return;
     }
-    activeNodeLockRef.current = null;
+    activeLockRef.current = null;
 
-    const measuredNodes = nextNodes.filter((node) => node.targetTurn.scrollTop !== null);
-    if (measuredNodes.length === 0) {
+    const measured = entriesRef.current.filter((entry) => entry.scrollTop !== null);
+    if (measured.length === 0) {
       setActiveIndex(null);
       return;
     }
     const focusTop = scrollEl.scrollTop + scrollEl.clientHeight * 0.3;
-    const nextActiveNode = measuredNodes.reduce((bestNode, node) => (
-      Math.abs((node.targetTurn.scrollTop ?? 0) - focusTop)
-        < Math.abs((bestNode.targetTurn.scrollTop ?? 0) - focusTop)
-        ? node
-        : bestNode
-    ), measuredNodes[0]);
-    setActiveIndex(nextActiveNode.index);
-  }, []);
-
-  const updateScroll = useCallback(() => {
-    const scrollEl = scrollContainer.current;
-    if (!scrollEl) return;
-    const scrollable = scrollEl.scrollHeight - scrollEl.clientHeight;
-    const currentNodes = allNodesRef.current;
-    setVisible(scrollable > 20);
-    syncActiveNode(scrollEl, currentNodes);
-  }, [scrollContainer, syncActiveNode]);
-
-  const measureThrottleRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const measureNodes = useCallback(() => {
-    if (measureThrottleRef.current) return;
-    measureThrottleRef.current = setTimeout(() => {
-      measureThrottleRef.current = null;
-      const scrollEl = scrollContainer.current;
-      const minimapEl = containerRef.current;
-      if (!scrollEl || !minimapEl) return;
-
-      const refs = messageRefs.current;
-      const containerRect = scrollEl.getBoundingClientRect();
-      const turns: TurnInfo[] = [];
-      let refIndex = 0;
-      let currentTurn: TurnInfo | null = null;
-
-      for (const message of allMessagesRef.current) {
-        if (message.role !== "user" && message.role !== "assistant") continue;
-        const element = refs?.[refIndex];
-        refIndex++;
-
-        if (message.role === "user") {
-          currentTurn = null;
-          const elementRect = element?.getBoundingClientRect();
-          currentTurn = {
-            userMessage: message as UserMessage,
-            scrollTop: elementRect
-              ? elementRect.top - containerRect.top + scrollEl.scrollTop
-              : null,
-          };
-          turns.push(currentTurn);
-          continue;
-        }
-      }
-
-      const nextNodes = createTurnNodes(turns);
-      setMinimapHeight(minimapEl.clientHeight);
-      allNodesRef.current = nextNodes;
-      setAllNodes(nextNodes);
-      setVisible(scrollEl.scrollHeight - scrollEl.clientHeight > 20);
-      syncActiveNode(scrollEl, nextNodes);
-
-      const pendingNavigation = pendingNavigationRef.current;
-      const pendingNode = pendingNavigation
-        ? nextNodes[pendingNavigation.nodeIndex]
-        : null;
-      if (pendingNavigation && pendingNode) {
-        const targetTop = pendingNode.targetTurn.scrollTop;
-        if (targetTop === null) return;
-        pendingNavigationRef.current = null;
-        lockActiveNode(pendingNode.index);
-        const targetOffset = scrollEl.clientHeight * 0.3;
-        scrollEl.scrollTo({ top: Math.max(0, targetTop - targetOffset), behavior: "smooth" });
-      }
-    }, 150);
-  }, [lockActiveNode, messageRefs, scrollContainer, syncActiveNode]);
+    const nearest = measured.reduce((best, entry) => (
+      Math.abs((entry.scrollTop ?? 0) - focusTop)
+        < Math.abs((best.scrollTop ?? 0) - focusTop)
+        ? entry
+        : best
+    ), measured[0]);
+    setActiveIndex(entriesRef.current.indexOf(nearest));
+  }, [scrollContainer]);
 
   useEffect(() => {
     const el = scrollContainer.current;
     if (!el) return;
-    el.addEventListener("scroll", updateScroll, { passive: true });
-    return () => el.removeEventListener("scroll", updateScroll);
-  }, [scrollContainer, updateScroll]);
-
-  useEffect(() => {
-    const el = scrollContainer.current;
-    if (!el) return;
-    const syncLayout = () => {
-      measureNodes();
-      updateScroll();
-    };
-    const ro = new ResizeObserver(syncLayout);
+    const onScroll = () => syncActive();
+    el.addEventListener("scroll", onScroll, { passive: true });
+    const ro = new ResizeObserver(() => {
+      measure();
+      syncActive();
+    });
     ro.observe(el);
-    if (el.firstElementChild) ro.observe(el.firstElementChild);
-    syncLayout();
+    measure();
+    syncActive();
     return () => {
+      el.removeEventListener("scroll", onScroll);
       ro.disconnect();
-      if (measureThrottleRef.current) {
-        clearTimeout(measureThrottleRef.current);
-        measureThrottleRef.current = null;
-      }
     };
-  }, [measureNodes, scrollContainer, updateScroll]);
+  }, [measure, scrollContainer, syncActive]);
 
   useEffect(() => {
-    const timeout = setTimeout(() => {
-      measureNodes();
-      updateScroll();
+    const timer = setTimeout(() => {
+      measure();
+      syncActive();
     }, 50);
-    return () => clearTimeout(timeout);
-  }, [messages.length, measureNodes, updateScroll]);
+    return () => clearTimeout(timer);
+  }, [messages.length, measure, syncActive]);
 
-  const scrollToNode = useCallback((node: NodeInfo, behavior: ScrollBehavior) => {
+  const scrollToEntry = useCallback((index: number) => {
     const scrollEl = scrollContainer.current;
     if (!scrollEl) return;
-    lockActiveNode(node.index);
-    if (node.targetTurn.scrollTop === null) {
-      pendingNavigationRef.current = { nodeIndex: node.index };
+    const entry = entriesRef.current[index];
+    if (!entry) return;
+    activeLockRef.current = { index, until: Date.now() + NAVIGATION_ACTIVE_LOCK_MS };
+    setActiveIndex(index);
+    if (entry.scrollTop === null) {
+      pendingNavRef.current = { index };
       onRevealHistory();
       return;
     }
-    const targetTop = Math.max(
-      0,
-      node.targetTurn.scrollTop - scrollEl.clientHeight * 0.3,
-    );
-    scrollEl.scrollTo({ top: targetTop, behavior });
-  }, [lockActiveNode, onRevealHistory, scrollContainer]);
+    scrollEl.scrollTo({
+      top: Math.max(0, entry.scrollTop - scrollEl.clientHeight * 0.3),
+      behavior: "smooth",
+    });
+  }, [onRevealHistory, scrollContainer]);
 
-  const findNearestNode = useCallback((ratio: number): NodeInfo | null => {
-    const { nodes, gap, fillsHeight } = nodeLayoutRef.current;
-    const height = containerRef.current?.clientHeight ?? 0;
-    if (nodes.length === 0 || height <= 0) return null;
-
-    const pointerY = Math.max(0, Math.min(height, ratio * height));
-    const firstNodeY = nodes[0].topRatio * height;
-    const rawIndex = gap > 0 ? Math.round((pointerY - firstNodeY) / gap) : 0;
-    const nodeIndex = Math.max(0, Math.min(nodes.length - 1, rawIndex));
-    const nearestNode = nodes[nodeIndex];
-
-    if (!fillsHeight) {
-      const nodeY = nearestNode.topRatio * height;
-      const hitRadius = Math.max(10, gap / 2);
-      if (Math.abs(pointerY - nodeY) > hitRadius) return null;
-    }
-    return nearestNode;
-  }, []);
-
-  const cancelPreviewHide = useCallback(() => {
-    if (!previewHideTimerRef.current) return;
-    clearTimeout(previewHideTimerRef.current);
-    previewHideTimerRef.current = null;
-  }, []);
-
-  const showPreview = useCallback(() => {
-    cancelPreviewHide();
-    setMinimapHovered(true);
-  }, [cancelPreviewHide]);
-
-  const schedulePreviewHide = useCallback(() => {
-    cancelPreviewHide();
-    previewHideTimerRef.current = setTimeout(() => {
-      previewHideTimerRef.current = null;
-      setMinimapHovered(false);
-      setMouseYRatio(null);
-    }, PREVIEW_HIDE_DELAY);
-  }, [cancelPreviewHide]);
-
-  useEffect(() => () => cancelPreviewHide(), [cancelPreviewHide]);
-
-  const handleMouseDown = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
-    if (!visible) return;
-
-    draggingRef.current = true;
-    showPreview();
-    const rect = event.currentTarget.getBoundingClientRect();
-    const pointerRatio = Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height));
-    setMouseYRatio(pointerRatio);
-    const jumpToPointer = (clientY: number, behavior: ScrollBehavior) => {
-      const ratio = Math.max(0, Math.min(1, (clientY - rect.top) / rect.height));
-      const node = findNearestNode(ratio);
-      if (node) {
-        scrollToNode(node, behavior);
-      }
-    };
-
-    jumpToPointer(event.clientY, "smooth");
-    const onMove = (moveEvent: MouseEvent) => {
-      if (!draggingRef.current) return;
-      jumpToPointer(moveEvent.clientY, "auto");
-    };
-    const onUp = () => {
-      draggingRef.current = false;
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
-    };
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
-  }, [findNearestNode, scrollToNode, showPreview, visible]);
-
-  const nearestNode = mouseYRatio === null ? null : findNearestNode(mouseYRatio);
-  const nearestNodeIndex = nearestNode?.index ?? null;
-
+  // Keep the active entry visible in the panel list.
   useEffect(() => {
-    if (!minimapHovered || nearestNodeIndex === null) return;
-    const previewBox = previewBoxRef.current;
-    const previewItem = previewItemRefs.current.get(nearestNodeIndex);
-    if (!previewBox || !previewItem) return;
-    const targetTop = previewItem.offsetTop
-      - (previewBox.clientHeight - previewItem.offsetHeight) / 2;
-    previewBox.scrollTop = Math.max(0, targetTop);
-  }, [allNodes, minimapHovered, nearestNodeIndex]);
+    if (activeIndex === null || !expanded) return;
+    const list = listRef.current;
+    if (!list) return;
+    const item = list.children[activeIndex] as HTMLElement | undefined;
+    item?.scrollIntoView({ block: "nearest" });
+  }, [activeIndex, expanded]);
 
-  if (hidden) {
+  if (!expanded) {
     return (
       <div
         style={{
-          width: 16,
+          width: COLLAPSED_WIDTH,
           flexShrink: 0,
           position: "relative",
           borderLeft: "1px solid var(--border)",
@@ -364,13 +199,13 @@ export function ChatMinimap({
           display: "flex",
           alignItems: "flex-start",
           justifyContent: "center",
-          paddingTop: 4,
+          paddingTop: 8,
         }}
       >
         <button
           type="button"
-          onClick={() => setHidden(false)}
-          title="Show minimap"
+          onClick={() => setExpanded(true)}
+          title="Show message navigator"
           style={{
             display: "flex",
             alignItems: "center",
@@ -393,7 +228,7 @@ export function ChatMinimap({
             event.currentTarget.style.background = "none";
           }}
         >
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <polyline points="9 18 15 12 9 6" />
           </svg>
         </button>
@@ -401,166 +236,109 @@ export function ChatMinimap({
     );
   }
 
-  if (!visible) return null;
-
-  const lastNodeTop = positionedNodes.length > 0
-    ? positionedNodes[positionedNodes.length - 1].topRatio * minimapHeight
-    : MINIMAP_PADDING;
-  const railHeight = Math.max(1, lastNodeTop - MINIMAP_PADDING);
-
   return (
     <div
-      ref={containerRef}
-      onMouseDown={handleMouseDown}
-      onMouseEnter={showPreview}
-      onMouseLeave={schedulePreviewHide}
-      onMouseMove={(event) => {
-        const rect = event.currentTarget.getBoundingClientRect();
-        setMouseYRatio((event.clientY - rect.top) / rect.height);
-      }}
       style={{
-        width: MINIMAP_WIDTH,
+        width: PANEL_WIDTH,
         flexShrink: 0,
-        position: "relative",
-        cursor: "pointer",
-        userSelect: "none",
+        display: "flex",
+        flexDirection: "column",
+        overflow: "hidden",
         borderLeft: "1px solid var(--border)",
         background: "var(--bg-panel)",
-        overflow: "visible",
       }}
     >
-      <button
-        type="button"
-        onMouseDown={(event) => event.stopPropagation()}
-        onClick={(event) => {
-          event.stopPropagation();
-          setHidden(true);
-        }}
-        title="Hide minimap"
-        style={{
-          position: "absolute",
-          top: 0,
-          left: 0,
-          right: 0,
-          zIndex: 3,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          width: MINIMAP_WIDTH,
-          height: 18,
-          padding: 0,
-          background: "none",
-          border: "none",
-          color: "var(--text-dim)",
-          cursor: "pointer",
-        }}
-        onMouseEnter={(event) => {
-          event.currentTarget.style.color = "var(--text)";
-        }}
-        onMouseLeave={(event) => {
-          event.currentTarget.style.color = "var(--text-dim)";
-        }}
-      >
-        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <polyline points="15 18 9 12 15 6" />
-        </svg>
-      </button>
       <div
         style={{
-          position: "absolute",
-          left: "50%",
-          top: MINIMAP_PADDING,
-          height: railHeight,
-          width: 1,
-          background: "var(--border)",
-          transform: "translateX(-50%)",
-          zIndex: 0,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: "8px 10px",
+          borderBottom: "1px solid var(--border)",
         }}
-      />
-
-      {positionedNodes.map((node) => {
-        const isNearest = minimapHovered && nearestNode?.index === node.index;
-        const isActive = activeIndex === node.index;
-
-        return (
-          <div
-            key={node.index}
-            data-minimap-node-index={node.index}
-            data-minimap-node-active={isActive ? "" : undefined}
-            style={{
-              position: "absolute",
-              top: `${node.topRatio * 100}%`,
-              transform: "translateY(-50%)",
-              left: 0,
-              right: 0,
-              height: Math.max(1, nodeGap),
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              pointerEvents: "none",
-              zIndex: 2,
-            }}
-          >
-            <div
-              style={{
-                width: 8,
-                height: 8,
-                borderRadius: 2,
-                background: isActive ? "rgba(128,128,128,0.42)" : "rgba(128,128,128,0.16)",
-                border: `1.5px solid ${isActive ? "rgba(128,128,128,0.95)" : "rgba(128,128,128,0.58)"}`,
-                boxShadow: isActive ? "0 0 0 2px var(--bg-panel)" : "none",
-                transition: "transform 0.1s, background 0.1s",
-                transform: isNearest ? "scale(1.25)" : "scale(1)",
-              }}
-            />
-          </div>
-        );
-      })}
-
-      {minimapHovered && allNodes.length > 0 && (
-        <div
-          ref={previewBoxRef}
-          className={styles.preview}
-          data-minimap-preview-box=""
-          onMouseEnter={showPreview}
-          onMouseDown={(event) => event.stopPropagation()}
-          onMouseMove={(event) => event.stopPropagation()}
+      >
+        <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-muted)" }}>
+          {entries.length} messages
+        </span>
+        <button
+          type="button"
+          onClick={() => setExpanded(false)}
+          title="Collapse navigator"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            width: 20,
+            height: 20,
+            padding: 0,
+            background: "none",
+            border: "none",
+            borderRadius: 4,
+            color: "var(--text-dim)",
+            cursor: "pointer",
+          }}
+          onMouseEnter={(event) => {
+            event.currentTarget.style.color = "var(--text)";
+            event.currentTarget.style.background = "var(--bg-hover)";
+          }}
+          onMouseLeave={(event) => {
+            event.currentTarget.style.color = "var(--text-dim)";
+            event.currentTarget.style.background = "none";
+          }}
         >
-          {allNodes.map((node) => {
-            const isLocated = nearestNodeIndex === node.index;
-            return (
-              <div
-                key={node.index}
-                ref={(element) => {
-                  if (element) previewItemRefs.current.set(node.index, element);
-                  else previewItemRefs.current.delete(node.index);
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="15 18 9 12 15 6" />
+          </svg>
+        </button>
+      </div>
+
+      <div ref={listRef} style={{ flex: 1, overflowY: "auto", padding: "4px 0" }}>
+        {entries.map((entry, index) => {
+          const isActive = activeIndex === index;
+          return (
+            <button
+              key={index}
+              type="button"
+              onClick={() => scrollToEntry(index)}
+              style={{
+                display: "flex",
+                alignItems: "flex-start",
+                gap: 7,
+                width: "100%",
+                padding: "7px 10px",
+                paddingLeft: entry.role === "assistant" ? 24 : 10,
+                background: isActive ? "color-mix(in srgb, var(--text) 6%, transparent)" : "transparent",
+                border: "none",
+                borderLeft: `2px solid ${isActive ? "var(--accent)" : "transparent"}`,
+                color: entry.role === "assistant" ? "var(--text-muted)" : "var(--text)",
+                cursor: "pointer",
+                textAlign: "left",
+                fontSize: 12,
+                lineHeight: 1.45,
+                transition: "background 100ms ease",
+              }}
+            >
+              {entry.role === "user" ? <UserIcon /> : <SparkleIcon />}
+              <span
+                style={{
+                  flex: 1,
+                  minWidth: 0,
+                  display: "-webkit-box",
+                  WebkitBoxOrient: "vertical",
+                  WebkitLineClamp: 2,
+                  overflow: "hidden",
+                  overflowWrap: "anywhere",
                 }}
-                className={styles.turn}
-                data-minimap-preview-index={node.index}
-                data-located={isLocated ? "true" : undefined}
               >
-                <span className={styles.number} aria-hidden="true">
-                  {String(node.index + 1).padStart(2, "0")}
-                </span>
-                <div className={styles.content}>
-                  <button
-                    type="button"
-                    className={styles.user}
-                    data-minimap-preview-user={node.index}
-                    onClick={() => {
-                      scrollToNode(node, "smooth");
-                    }}
-                  >
-                    <span className={styles.userText}>
-                      {getUserPreview(node.targetTurn.userMessage)}
-                    </span>
-                  </button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
+                {entry.text || "…"}
+              </span>
+            </button>
+          );
+        })}
+        {entries.length === 0 && (
+          <div style={{ padding: 16, fontSize: 12, color: "var(--text-dim)" }}>No messages yet</div>
+        )}
+      </div>
     </div>
   );
 }

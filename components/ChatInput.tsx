@@ -23,6 +23,7 @@ import {
   buildEntriesFromFiles, buildAtInsertText, extractAtQuery, extractSlashQuery, filterFileEntries,
   type AtQueryMatch, type FileIndexEntry, type SlashQueryMatch,
 } from "@/lib/file-fuzzy";
+import { parseMentions, type MentionKind } from "@/lib/mention-highlight";
 import { FolderIcon, getFileIcon } from "./FileIcons";
 import { uploadDroppedFiles } from "@/lib/upload-dropped-files";
 import { fileBaseName, formatFileSize, type AttachedFile } from "@/lib/file-attachments";
@@ -108,6 +109,32 @@ const COMPOSITION_END_ENTER_GRACE_MS = 100;
 const MODEL_FILTER_THRESHOLD = 8;
 const MODEL_OPTION_COLLATOR = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
 const ANCHORED_MENU_GAP = 8;
+
+// Chips used by the composer highlight layer to distinguish invoked skills,
+// slash commands, and @-file mentions from the surrounding prompt text.
+const MENTION_CHIP_STYLES: Record<MentionKind, React.CSSProperties> = {
+  skill: {
+    background: "rgba(129,140,248,0.16)",
+    color: "rgb(165,180,252)",
+    borderRadius: 4,
+    padding: "1px 3px",
+    fontWeight: 600,
+  },
+  command: {
+    background: "rgba(59,130,246,0.15)",
+    color: "rgb(96,165,250)",
+    borderRadius: 4,
+    padding: "1px 3px",
+    fontWeight: 600,
+  },
+  file: {
+    background: "rgba(234,179,8,0.14)",
+    color: "rgb(234,179,8)",
+    borderRadius: 4,
+    padding: "1px 3px",
+    fontWeight: 600,
+  },
+};
 
 export function getUpwardMenuMaxHeight(menuBottom: number, visibleTop: number, gap = ANCHORED_MENU_GAP): number {
   return Math.max(0, Math.floor(menuBottom - visibleTop - gap));
@@ -414,6 +441,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   ));
   const [fileUploadError, setFileUploadError] = useState<string | null>(null);
   const trimmedValue = value.trimStart();
+  const highlightSegments = React.useMemo(() => parseMentions(value), [value]);
   const bashMode = attachedImages.length === 0 && trimmedValue.startsWith("!");
   const bashExcluded = bashMode && trimmedValue.startsWith("!!");
   const [slashMenuOpen, setSlashMenuOpen] = useState(false);
@@ -437,6 +465,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     : {};
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const highlightRef = useRef<HTMLDivElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const modelDropdownPanelRef = useRef<HTMLDivElement>(null);
   const toolDropdownRef = useRef<HTMLDivElement>(null);
@@ -2027,58 +2056,94 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
               transition: "border-color 0.15s, background 0.15s, box-shadow 0.15s",
             } as React.CSSProperties}
           >
-          <textarea
-            ref={textareaRef}
-            value={value}
-            onChange={(e) => {
-              valueRef.current = e.target.value;
-              setValue(e.target.value);
-              setHistoryMenuOpen(false);
-              updateAtQuery(e.target.value, e.target.selectionStart);
-              updateSlashQuery(e.target.value, e.target.selectionStart);
-            }}
-            onSelect={(e) => {
-              const el = e.currentTarget;
-              updateAtQuery(el.value, el.selectionStart);
-              updateSlashQuery(el.value, el.selectionStart);
-            }}
-            onKeyDown={handleKeyDown}
-            onCompositionStart={() => {
-              isComposingRef.current = true;
-            }}
-            onCompositionEnd={(e) => {
-              isComposingRef.current = false;
-              lastCompositionEndAtRef.current = Date.now();
-              const el = e.currentTarget;
-              updateAtQuery(el.value, el.selectionStart);
-              updateSlashQuery(el.value, el.selectionStart);
-            }}
-            onInput={handleInput}
-            onPaste={handlePaste}
-            placeholder={
-              isStreaming && (onSteer || onFollowUp)
-                ? t("chat.steerPlaceholder")
-                : isStreaming ? t("chat.agentPlaceholder")
-                : t("chat.messagePlaceholder")
-            }
-            rows={1}
-            style={{
-              flex: 1,
-              minWidth: 0,
-              width: "100%",
-              background: "none",
-              border: "none",
-              outline: "none",
-              resize: "none",
-              color: "var(--text)",
-              fontSize: 14,
-              lineHeight: 1.6,
-              fontFamily: "inherit",
-              minHeight: 24,
-              maxHeight: 200,
-              overflow: "auto",
-            }}
-          />
+          <div style={{ flex: 1, minWidth: 0, position: "relative" }}>
+            <div
+              ref={highlightRef}
+              aria-hidden="true"
+              style={{
+                position: "absolute",
+                inset: 0,
+                pointerEvents: "none",
+                whiteSpace: "pre-wrap",
+                wordBreak: "break-word",
+                overflow: "hidden",
+                fontSize: 14,
+                lineHeight: 1.6,
+                fontFamily: "inherit",
+                color: "var(--text)",
+              }}
+            >
+              {highlightSegments.map((segment, index) => (
+                <span
+                  key={index}
+                  style={segment.kind === "text" ? undefined : MENTION_CHIP_STYLES[segment.kind]}
+                >
+                  {segment.text}
+                </span>
+              ))}
+              {"\u200b"}
+            </div>
+            <textarea
+              ref={textareaRef}
+              value={value}
+              onChange={(e) => {
+                valueRef.current = e.target.value;
+                setValue(e.target.value);
+                setHistoryMenuOpen(false);
+                updateAtQuery(e.target.value, e.target.selectionStart);
+                updateSlashQuery(e.target.value, e.target.selectionStart);
+              }}
+              onSelect={(e) => {
+                const el = e.currentTarget;
+                updateAtQuery(el.value, el.selectionStart);
+                updateSlashQuery(el.value, el.selectionStart);
+              }}
+              onKeyDown={handleKeyDown}
+              onCompositionStart={() => {
+                isComposingRef.current = true;
+              }}
+              onCompositionEnd={(e) => {
+                isComposingRef.current = false;
+                lastCompositionEndAtRef.current = Date.now();
+                const el = e.currentTarget;
+                updateAtQuery(el.value, el.selectionStart);
+                updateSlashQuery(el.value, el.selectionStart);
+              }}
+              onInput={handleInput}
+              onPaste={handlePaste}
+              onScroll={(e) => {
+                if (highlightRef.current) {
+                  highlightRef.current.scrollTop = e.currentTarget.scrollTop;
+                }
+              }}
+              placeholder={
+                isStreaming && (onSteer || onFollowUp)
+                  ? t("chat.steerPlaceholder")
+                  : isStreaming ? t("chat.agentPlaceholder")
+                  : t("chat.messagePlaceholder")
+              }
+              rows={1}
+              style={{
+                position: "relative",
+                zIndex: 1,
+                display: "block",
+                width: "100%",
+                background: "none",
+                border: "none",
+                outline: "none",
+                resize: "none",
+                color: "transparent",
+                caretColor: "var(--text)",
+                fontSize: 14,
+                lineHeight: 1.6,
+                fontFamily: "inherit",
+                minHeight: 24,
+                maxHeight: 200,
+                overflow: "auto",
+                padding: 0,
+              }}
+            />
+          </div>
 
           {isStreaming ? (
             <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0, alignSelf: "flex-end" }}>

@@ -144,6 +144,7 @@ export const enLocale: LocalePlugin = {
     "files.delete": "Delete file",
     "files.deleteConfirm": "Delete \"{name}\"? This cannot be undone.",
     "files.deleteFailed": "Failed to delete file",
+    "files.confirmDelete": "Delete",
     "files.dismissError": "Dismiss error",
     "files.addUploadedFile": "Add uploaded file to chat",
     "files.addAllUploadedFiles": "Add all uploaded files to chat",

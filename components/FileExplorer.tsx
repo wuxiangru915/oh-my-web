@@ -249,6 +249,7 @@ function TreeNode({
   const [loaded, setLoaded] = useState(node.loaded ?? false);
   const [loading, setLoading] = useState(false);
   const [hovered, setHovered] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   const loadChildren = useCallback(async (force = false) => {
     if (loaded && !force) return;
@@ -287,7 +288,7 @@ function TreeNode({
       <div
         onClick={handleClick}
         onMouseEnter={() => setHovered(true)}
-        onMouseLeave={() => setHovered(false)}
+        onMouseLeave={() => { setHovered(false); setConfirmingDelete(false); }}
         style={{
           position: "relative",
           display: "flex",
@@ -361,7 +362,7 @@ function TreeNode({
             <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4" />
           </svg>
         )}
-        {onAtMention && hovered && (
+        {onAtMention && hovered && !confirmingDelete && (
           <button
             onClick={(e) => {
               e.stopPropagation();
@@ -390,50 +391,101 @@ function TreeNode({
           </button>
         )}
         {hovered && !node.isDir && onRequestRefresh && (
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              if (!window.confirm(t("files.deleteConfirm", { name: node.name }))) return;
-              fetch(`/api/files/${encodeFilePathForApi(node.fullPath)}?type=delete`, { method: "DELETE" })
-                .then(async (res) => {
-                  if (!res.ok) {
-                    const data = await res.json().catch(() => null) as { error?: string } | null;
-                    throw new Error(data?.error ?? `HTTP ${res.status}`);
-                  }
-                  onRequestRefresh();
-                })
-                .catch((err: unknown) => {
-                  console.error("File delete failed:", err);
-                  window.alert(t("files.deleteFailed"));
-                });
-            }}
-            title={t("files.delete")}
-            style={{
-              position: "absolute",
-              right: 28,
-              top: "50%",
-              transform: "translateY(-50%)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              padding: "0 5px",
-              height: 20,
-              background: "var(--bg-panel)",
-              border: "1px solid var(--border)",
-              borderRadius: 4,
-              color: "var(--text-muted)",
-              cursor: "pointer",
-            }}
-          >
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="3 6 5 6 21 6" />
-              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-              <line x1="10" y1="11" x2="10" y2="17" />
-              <line x1="14" y1="11" x2="14" y2="17" />
-            </svg>
-          </button>
+          confirmingDelete ? (
+            <div
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                position: "absolute",
+                right: 4,
+                top: "50%",
+                transform: "translateY(-50%)",
+                display: "flex",
+                alignItems: "center",
+                gap: 4,
+                height: 20,
+              }}
+            >
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setConfirmingDelete(false);
+                  fetch(`/api/files/${encodeFilePathForApi(node.fullPath)}?type=delete`, { method: "DELETE" })
+                    .then(async (res) => {
+                      if (!res.ok) {
+                        const data = await res.json().catch(() => null) as { error?: string } | null;
+                        throw new Error(data?.error ?? `HTTP ${res.status}`);
+                      }
+                      onRequestRefresh();
+                    })
+                    .catch((err: unknown) => {
+                      console.error("File delete failed:", err);
+                      window.alert(t("files.deleteFailed"));
+                    });
+                }}
+                title={t("files.deleteConfirm", { name: node.name })}
+                style={{
+                  padding: "0 8px",
+                  height: 20,
+                  background: "rgba(239,68,68,0.12)",
+                  border: "1px solid rgba(239,68,68,0.4)",
+                  borderRadius: 4,
+                  color: "rgb(239,68,68)",
+                  cursor: "pointer",
+                  fontSize: 11,
+                  fontWeight: 600,
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {t("files.confirmDelete")}
+              </button>
+              <button
+                onClick={(e) => { e.stopPropagation(); setConfirmingDelete(false); }}
+                style={{
+                  padding: "0 8px",
+                  height: 20,
+                  background: "var(--bg-panel)",
+                  border: "1px solid var(--border)",
+                  borderRadius: 4,
+                  color: "var(--text-muted)",
+                  cursor: "pointer",
+                  fontSize: 11,
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {t("files.cancel")}
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={(e) => { e.stopPropagation(); setConfirmingDelete(true); }}
+              title={t("files.delete")}
+              style={{
+                position: "absolute",
+                right: 28,
+                top: "50%",
+                transform: "translateY(-50%)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                padding: "0 5px",
+                height: 20,
+                background: "var(--bg-panel)",
+                border: "1px solid var(--border)",
+                borderRadius: 4,
+                color: "var(--text-muted)",
+                cursor: "pointer",
+              }}
+            >
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="3 6 5 6 21 6" />
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                <line x1="10" y1="11" x2="10" y2="17" />
+                <line x1="14" y1="11" x2="14" y2="17" />
+              </svg>
+            </button>
+          )
         )}
-        {hovered && !node.isDir && (
+        {hovered && !node.isDir && !confirmingDelete && (
           <a
             href={`/api/files/${encodeFilePathForApi(node.fullPath)}?type=download`}
             download

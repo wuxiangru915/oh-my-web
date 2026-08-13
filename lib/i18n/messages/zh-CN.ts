@@ -144,6 +144,7 @@ export const zhCNLocale: LocalePlugin = {
     "files.delete": "删除文件",
     "files.deleteConfirm": "删除 \"{name}\"？此操作无法撤销。",
     "files.deleteFailed": "删除文件失败",
+    "files.confirmDelete": "删除",
     "files.dismissError": "关闭错误",
     "files.addUploadedFile": "将上传的文件添加到聊天",
     "files.addAllUploadedFiles": "将所有上传的文件添加到聊天",
