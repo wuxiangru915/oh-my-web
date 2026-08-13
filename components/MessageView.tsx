@@ -294,74 +294,36 @@ function buildUserContentSegments(content: string): UserContentSegment[] {
   return segments;
 }
 
-function SkillBlock({ name, location, content, cwd, onOpenFile }: {
-  name: string;
-  location: string;
-  content: string;
-  cwd?: string;
-  onOpenFile?: (filePath: string) => void;
-}) {
-  const { t } = useI18n();
-  const [expanded, setExpanded] = useState(false);
-  const lineCount = content.split("\n").length;
+function SkillChip({ name, location }: { name: string; location?: string }) {
   return (
     <div
       style={{
-        border: "1px solid var(--border)",
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 6,
+        padding: "4px 10px",
+        background: "rgba(59,130,246,0.15)",
+        border: "1px solid rgba(59,130,246,0.35)",
         borderRadius: 6,
-        overflow: "hidden",
-        fontSize: 13,
+        fontSize: 12,
+        color: "rgb(96,165,250)",
       }}
     >
-      <button
-        onClick={() => setExpanded((v) => !v)}
-        title={expanded ? t("i18n.collapse") : t("i18n.expand")}
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 6,
-          width: "100%",
-          padding: "6px 10px",
-          background: "var(--bg-panel)",
-          border: "none",
-          color: "var(--text-muted)",
-          cursor: "pointer",
-          fontSize: 12,
-          textAlign: "left",
-        }}
-      >
-        <span style={{ flexShrink: 0 }}>{expanded ? "▾" : "▸"}</span>
-        <span style={{ fontWeight: 600, color: "var(--text)", flexShrink: 0 }}>skill: {name}</span>
-        {location && (
-          <span
-            style={{
-              color: "var(--text-dim)",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-              minWidth: 0,
-              flex: 1,
-            }}
-          >
-            {location}
-          </span>
-        )}
-        <span style={{ marginLeft: "auto", flexShrink: 0, color: "var(--text-dim)", whiteSpace: "nowrap" }}>
-          {lineCount} {t("chat.lines")} · {expanded ? t("i18n.collapse") : t("i18n.expand")}
-        </span>
-      </button>
-      {expanded && (
-        <div
+      <span style={{ fontWeight: 600 }}>skill: {name}</span>
+      {location && (
+        <span
           style={{
-            padding: "8px 10px",
-            borderTop: "1px solid var(--border)",
-            maxHeight: 420,
-            overflowY: "auto",
-            background: "var(--bg)",
+            color: "var(--text-dim)",
+            fontFamily: "var(--font-mono)",
+            fontSize: 11,
+            maxWidth: 200,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
           }}
         >
-          <SafeMarkdownBody className="markdown-user-message" cwd={cwd} onOpenFile={onOpenFile}>{content}</SafeMarkdownBody>
-        </div>
+          {location}
+        </span>
       )}
     </div>
   );
@@ -593,7 +555,7 @@ function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, o
             <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
               {contentSegments.map((seg, i) =>
                 seg.type === "skill" ? (
-                  <SkillBlock key={i} name={seg.name} location={seg.location} content={seg.content} cwd={cwd} onOpenFile={onOpenFile} />
+                  <SkillChip key={i} name={seg.name} location={seg.location} />
                 ) : seg.type === "attachment" ? (
                   <AttachmentCard key={i} path={seg.path} />
                 ) : seg.type === "fileMention" ? (
