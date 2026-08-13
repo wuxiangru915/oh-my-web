@@ -17,6 +17,28 @@ export interface FileIndexEntry {
   isDir: boolean;
 }
 
+export interface SlashQueryMatch {
+  /** Index of the "/" character in the text */
+  start: number;
+  /** Text typed after the "/" (may be empty) */
+  query: string;
+}
+
+/**
+ * Detect a "/" command token immediately before the cursor. The "/" must be
+ * at the start of the text or preceded by whitespace (same rule as the TUI),
+ * so paths like a/b or email-ish text never trigger. The token must not
+ * contain spaces or another slash, so "a/b" inside a token stays inert.
+ */
+export function extractSlashQuery(textBeforeCursor: string): SlashQueryMatch | null {
+  const match = /(?:^|\s)\/([^\s/]*)$/.exec(textBeforeCursor);
+  if (!match) return null;
+  return {
+    start: textBeforeCursor.length - (match[1].length + 1),
+    query: match[1],
+  };
+}
+
 /**
  * Detect an @ file token immediately before the cursor. The @ must be at the
  * start of the text or preceded by whitespace (same rule as the TUI), so

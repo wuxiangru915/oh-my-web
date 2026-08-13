@@ -20,8 +20,8 @@ import {
   isBase64ImageWithinLimits,
 } from "@/lib/image-attachments";
 import {
-  buildEntriesFromFiles, buildAtInsertText, extractAtQuery, filterFileEntries,
-  type AtQueryMatch, type FileIndexEntry,
+  buildEntriesFromFiles, buildAtInsertText, extractAtQuery, extractSlashQuery, filterFileEntries,
+  type AtQueryMatch, type FileIndexEntry, type SlashQueryMatch,
 } from "@/lib/file-fuzzy";
 import { FolderIcon, getFileIcon } from "./FileIcons";
 import { uploadDroppedFiles } from "@/lib/upload-dropped-files";
@@ -417,6 +417,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const bashMode = attachedImages.length === 0 && trimmedValue.startsWith("!");
   const bashExcluded = bashMode && trimmedValue.startsWith("!!");
   const [slashMenuOpen, setSlashMenuOpen] = useState(false);
+  const [slashQuery, setSlashQuery] = useState<SlashQueryMatch | null>(null);
   const [slashActiveIndex, setSlashActiveIndex] = useState(0);
   const [slashMenuMaxHeight, setSlashMenuMaxHeight] = useState<number | null>(null);
   const [atQuery, setAtQuery] = useState<AtQueryMatch | null>(null);
@@ -828,21 +829,18 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     );
   }, [value, attachedImages, attachedFiles, isStreaming, onBuiltinCommand, onSend, clearInput, onAudioUnlock]);
 
-  const slashQuery = value.startsWith("/") && !/\s/.test(value.slice(1))
-    ? value.slice(1).toLowerCase()
-    : null;
-
   const filteredSlashCommands = (() => {
     if (slashQuery === null) return [];
+    const query = slashQuery.query;
     const commands = [...(isStreaming ? [] : BUILTIN_SLASH_COMMANDS), ...(slashCommands ?? [])];
     return [...commands]
       .filter((command) => {
         const name = command.name.toLowerCase();
         const description = getSlashDescription(command, t).toLowerCase();
-        return name.includes(slashQuery) || description.includes(slashQuery);
+        return name.includes(query) || description.includes(query);
       })
       .sort((a, b) => {
-        const rankDelta = slashMatchRank(a, slashQuery, t) - slashMatchRank(b, slashQuery, t);
+        const rankDelta = slashMatchRank(a, query, t) - slashMatchRank(b, query, t);
         if (rankDelta !== 0) return rankDelta;
         return SLASH_SOURCE_ORDER[a.source] - SLASH_SOURCE_ORDER[b.source]
           || MODEL_OPTION_COLLATOR.compare(a.name, b.name);
@@ -859,6 +857,15 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     : t(slashQuery ? "chat.matches" : "chat.commands", { count: filteredSlashCommands.length });
   const hasInputText = Boolean(value.trim());
   const canQueueStreamingMessage = (hasInputText || attachedImages.length > 0) && attachedFiles.length === 0;
+
+  // ── slash command detection ──────────────────────────────────────────────
+  // Cursor-aware, so multiple skills can be invoked back-to-back: typing
+  // "/skill:a " then "/" again opens the palette at the new token.
+  const updateSlashQuery = useCallback((text: string, cursor: number | null) => {
+    const pos = cursor ?? text.length;
+    const match = extractSlashQuery(text.slice(0, pos));
+    setSlashQuery(match ? { start: match.start, query: match.query.toLowerCase() } : null);
+  }, []);
 
   // ── @ file autocomplete ──────────────────────────────────────────────────
   // Recomputed from the text before the caret on every change/caret move.
@@ -1028,19 +1035,30 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   }, []);
 
   const applySlashCommand = useCallback((command: SlashCommandPaletteItem) => {
-    const nextValue = `/${command.name} `;
-    setValue(nextValue);
+    if (!slashQuery) return;
+    const ta = textareaRef.current;
+    const cursor = ta?.selectionStart ?? value.length;
+    const before = value.slice(0, slashQuery.start);
+    const after = value.slice(cursor);
+    const insert = `/${command.name} `;
+    const newValue = before + insert + after;
+    const newPos = before.length + insert.length;
+    valueRef.current = newValue;
+    setValue(newValue);
     setSlashMenuOpen(false);
     setSlashActiveIndex(0);
+    // The inserted token ends with a space, so the slash menu closes and the
+    // palette can be re-opened by typing "/" again for the next skill.
+    setSlashQuery(extractSlashQuery(newValue.slice(0, newPos)));
     requestAnimationFrame(() => {
-      const ta = textareaRef.current;
-      if (!ta) return;
-      ta.focus();
-      ta.setSelectionRange(nextValue.length, nextValue.length);
-      ta.style.height = "auto";
-      ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`;
+      const ta2 = textareaRef.current;
+      if (!ta2) return;
+      ta2.focus();
+      ta2.setSelectionRange(newPos, newPos);
+      ta2.style.height = "auto";
+      ta2.style.height = `${Math.min(ta2.scrollHeight, 200)}px`;
     });
-  }, []);
+  }, [slashQuery, value]);
 
   const sendQueued = useCallback((mode: "steer" | "followup") => {
     const msg = value.trim();
@@ -2017,10 +2035,12 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
               setValue(e.target.value);
               setHistoryMenuOpen(false);
               updateAtQuery(e.target.value, e.target.selectionStart);
+              updateSlashQuery(e.target.value, e.target.selectionStart);
             }}
             onSelect={(e) => {
               const el = e.currentTarget;
               updateAtQuery(el.value, el.selectionStart);
+              updateSlashQuery(el.value, el.selectionStart);
             }}
             onKeyDown={handleKeyDown}
             onCompositionStart={() => {
@@ -2031,6 +2051,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
               lastCompositionEndAtRef.current = Date.now();
               const el = e.currentTarget;
               updateAtQuery(el.value, el.selectionStart);
+              updateSlashQuery(el.value, el.selectionStart);
             }}
             onInput={handleInput}
             onPaste={handlePaste}

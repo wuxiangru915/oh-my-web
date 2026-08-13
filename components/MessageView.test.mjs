@@ -58,15 +58,15 @@ test("renders partial assistant content before the provider error", () => {
   assert.match(html, /Error: Connection closed/);
 });
 
-test("renders a complete SDK skill expansion as a compact command", () => {
+test("renders a complete SDK skill expansion as a collapsible skill block", () => {
   const html = renderMessage({
     role: "user",
     content: COMPLETE_SKILL_EXPANSION,
   });
 
-  assert.match(html, /\/skill:review/);
+  assert.match(html, /skill: review/);
+  assert.match(html, /\/skills\/review\/SKILL\.md/);
   assert.match(html, /src\/main\.ts/);
-  assert.match(html, /aria-expanded="false"/);
   assert.doesNotMatch(html, /Review the supplied files/);
 });
 
