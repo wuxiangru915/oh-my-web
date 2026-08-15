@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback, useMemo, type RefObject } from "react";
-import type { AgentMessage, AssistantMessage, TextContent, ToolCallContent, UserMessage } from "@/lib/types";
+import type { AgentMessage, AssistantMessage, TextContent, UserMessage } from "@/lib/types";
 
 interface Props {
   messages: AgentMessage[];
@@ -33,14 +33,11 @@ function getUserPreview(message: UserMessage): string {
 function getAssistantPreview(message: AssistantMessage | Partial<AgentMessage>): string {
   const content = (message as AssistantMessage).content;
   if (!Array.isArray(content)) return "";
-  const text = content
-    .filter((block): block is TextContent => block.type === "text")
-    .map((block) => block.text)
-    .join("\n")
-    .trim();
-  if (text) return text;
-  const tool = content.find((block): block is ToolCallContent => block.type === "toolCall");
-  return tool ? `⚙ ${tool.toolName}` : "";
+  // Only the final text block is the answer; tool calls and intermediate
+  // steps are runtime detail the navigator should not surface.
+  const textBlocks = content.filter((block): block is TextContent => block.type === "text");
+  if (textBlocks.length === 0) return "";
+  return textBlocks[textBlocks.length - 1].text.trim();
 }
 
 function UserIcon() {
@@ -101,7 +98,9 @@ export function ChatMinimap({
       if (message.role === "user") {
         next.push({ role: "user", text: getUserPreview(message as UserMessage), scrollTop });
       } else {
-        next.push({ role: "assistant", text: getAssistantPreview(message), scrollTop });
+        const text = getAssistantPreview(message);
+        if (!text) continue; // pure tool-call step — not part of the Q&A timeline
+        next.push({ role: "assistant", text, scrollTop });
       }
     }
 

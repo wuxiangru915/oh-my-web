@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { existsSync, readFileSync, statSync } from "fs";
-import { basename, dirname, extname, join, relative } from "path";
+import { homedir } from "os";
+import { basename, dirname, extname, isAbsolute, join, relative, resolve } from "path";
 import {
   DefaultPackageManager,
   getAgentDir,
@@ -40,6 +41,24 @@ function keyFor(source: string, scope: PluginScope): string {
 
 function getPackageSource(entry: PackageSource): string {
   return typeof entry === "string" ? entry : entry.source;
+}
+
+// Mirrors DefaultPackageManager.normalizePackageSourceForSettings (private in
+// the upstream package): local sources are persisted relative to the scope's
+// base dir (agent dir for user scope, <cwd>/.pi for project scope).
+function normalizeLocalSourceForSettings(
+  source: string,
+  scope: PluginScope,
+  agentDir: string,
+  cwd: string,
+): string {
+  const trimmed = source.trim();
+  if (trimmed.startsWith("npm:") || trimmed.startsWith("git:") || /^[a-z]+:\/\//.test(trimmed)) return trimmed;
+  const baseDir = scope === "project" ? join(cwd, ".pi") : agentDir;
+  const expanded = trimmed.startsWith("~/") ? join(homedir(), trimmed.slice(2)) : trimmed;
+  const resolved = isAbsolute(expanded) ? resolve(expanded) : resolve(baseDir, expanded);
+  const rel = relative(baseDir, resolved);
+  return rel || ".";
 }
 
 function isDisabledPackage(entry: PackageSource): boolean {
@@ -342,7 +361,23 @@ export async function POST(req: Request) {
       await packageManager.installAndPersist(source, { local });
     } else if (body.action === "remove") {
       if (!source) return NextResponse.json({ error: "source required" }, { status: 400 });
-      await packageManager.removeAndPersist(source, { local });
+      const removed = await packageManager.removeAndPersist(source, { local });
+      if (!removed) {
+        // pi's matcher resolves the incoming local path against the project
+        // cwd, but local sources were persisted relative to the agent dir, so
+        // the keys never match when agentDir !== cwd. Normalize against the
+        // same base dir and remove by string equality instead.
+        const normalized = normalizeLocalSourceForSettings(source, scope, agentDir, body.cwd);
+        const current = scope === "project"
+          ? settingsManager.getProjectSettings().packages ?? []
+          : settingsManager.getGlobalSettings().packages ?? [];
+        const next = current.filter((entry) => getPackageSource(entry) !== normalized);
+        if (next.length !== current.length) {
+          if (scope === "project") settingsManager.setProjectPackages(next);
+          else settingsManager.setPackages(next);
+          await settingsManager.flush();
+        }
+      }
     } else if (body.action === "update") {
       await packageManager.update(source);
     } else if (body.action === "disable") {
