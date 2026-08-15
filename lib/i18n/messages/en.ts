@@ -17,7 +17,6 @@ export const enLocale: LocalePlugin = {
     "theme.dark": "Dark mode (click for system)",
     "theme.auto": "System theme (click for light)",
     "history.full": "Full history",
-    "history.unsaved": "Full history is available after the session is saved",
     "history.label": "Full history",
     "system.prompt": "System prompt",
     "system.empty": "System prompt is empty (tools are disabled)",
