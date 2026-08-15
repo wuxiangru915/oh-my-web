@@ -373,7 +373,7 @@ function TreeNode({
             title={t("files.insertPath")}
             style={{
               position: "absolute",
-              right: !node.isDir ? 52 : 4,
+              right: !node.isDir ? 52 : 76,
               top: "50%",
               transform: "translateY(-50%)",
               display: "flex",
@@ -392,7 +392,7 @@ function TreeNode({
             <MentionIcon />
           </button>
         )}
-        {hovered && !node.isDir && onRequestRefresh && (
+        {hovered && onRequestRefresh && (
           confirmingDelete ? (
             <div
               onClick={(e) => e.stopPropagation()}
