@@ -1095,9 +1095,9 @@ export function AppShell() {
             alignItems: "center",
             justifyContent: "center",
             gap: 6,
-            width: mobile ? TOP_BAR_ICON_BUTTON_SIZE : undefined,
+            width: TOP_BAR_ICON_BUTTON_SIZE,
             height: "100%",
-            padding: mobile ? 0 : "0 12px",
+            padding: 0,
             background: "none",
             border: "none",
             borderTop: "2px solid transparent",
@@ -1140,7 +1140,6 @@ export function AppShell() {
             <path d="M3 3v5h5" />
             <path d="M12 7v5l3 2" />
           </svg>
-          {!mobile && <span>{translate("history.label")}</span>}
         </button>
         {mobile ? (
           <button
@@ -1178,6 +1177,7 @@ export function AppShell() {
             open={activeTopPanel === "branches"}
             onToggle={() => toggleTopPanel("branches")}
             hasSession
+            compact
           />
         )}
         <button
@@ -1190,8 +1190,8 @@ export function AppShell() {
           aria-pressed={activeTopPanel === "system"}
           style={{
             display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
-            width: mobile ? TOP_BAR_ICON_BUTTON_SIZE : undefined,
-            height: "100%", padding: mobile ? 0 : "0 12px",
+            width: TOP_BAR_ICON_BUTTON_SIZE,
+            height: "100%", padding: 0,
             background: activeTopPanel === "system" ? "var(--bg-selected)" : "none",
             border: "none",
             borderTop: activeTopPanel === "system" ? "2px solid var(--accent)" : "2px solid transparent",
@@ -1199,7 +1199,7 @@ export function AppShell() {
             cursor: mobile && !showChat ? "not-allowed" : "pointer",
             color: activeTopPanel === "system" ? "var(--text)" : "var(--text-muted)",
             opacity: mobile && !showChat ? 0.45 : 1,
-            fontSize: 11, whiteSpace: "nowrap", transition: "color 0.1s, background 0.1s",
+            transition: "color 0.1s, background 0.1s",
           }}
           onMouseEnter={(event) => {
             if (mobile && !showChat) return;
@@ -1216,7 +1216,6 @@ export function AppShell() {
             <line x1="8" y1="13" x2="16" y2="13" />
             <line x1="8" y1="17" x2="13" y2="17" />
           </svg>
-          {!mobile && <span>{translate("system.label")}</span>}
         </button>
         {mobile && renderThemeButton(true)}
         {mobile && renderLanguageButton(true)}
@@ -2059,26 +2058,6 @@ export function AppShell() {
               onCloseTab={handleCloseFileTab}
             />
           </div>
-          <button
-            type="button"
-            onClick={() => setRightPanelOpen(false)}
-            aria-controls="file-panel"
-            aria-expanded={rightPanelOpen}
-            title={translate("files.hidePanel")}
-            aria-label={translate("files.hidePanel")}
-            style={{
-              display: "flex", alignItems: "center", justifyContent: "center",
-              width: TOP_BAR_ICON_BUTTON_SIZE, height: TOP_BAR_ICON_BUTTON_SIZE, padding: 0,
-              background: "var(--bg-selected)", border: "none", borderLeft: "1px solid var(--border)",
-              color: "var(--text)", cursor: "pointer", flexShrink: 0, transition: "color 0.12s",
-            }}
-            onMouseEnter={(event) => { event.currentTarget.style.color = "var(--accent)"; }}
-            onMouseLeave={(event) => { event.currentTarget.style.color = "var(--text)"; }}
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <rect x="3" y="3" width="18" height="18" rx="2" /><line x1="15" y1="3" x2="15" y2="21" />
-            </svg>
-          </button>
         </div>
 
         {/* Only the active viewer is mounted. Lightweight per-tab state is restored on activation. */}
