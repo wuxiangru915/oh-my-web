@@ -154,6 +154,7 @@ interface ProviderEntry {
 
 interface ModelsJson {
   providers?: Record<string, ProviderEntry>;
+  hiddenProviders?: string[];
 }
 
 type ModelTestState =
@@ -1323,7 +1324,7 @@ function ModelDetail({
 
 // ── OAuth detail ──────────────────────────────────────────────────────────────
 
-function OAuthDetail({ provider, onRefresh, onDelete }: { provider: OAuthProvider; onRefresh: () => void; onDelete: () => void }) {
+function OAuthDetail({ provider, onRefresh, onHide }: { provider: OAuthProvider; onRefresh: () => void; onHide: () => void }) {
   const [loginState, setLoginState] = useState<OAuthLoginState>({ phase: "idle" });
   const { t } = useI18n();
   const [inputValue, setInputValue] = useState("");
@@ -1578,14 +1579,25 @@ function OAuthDetail({ provider, onRefresh, onDelete }: { provider: OAuthProvide
         )}
       </div>
 
-      <DeleteProviderButton providerName={provider.name || provider.id} onDelete={onDelete} />
+      <div style={{ borderTop: "1px solid var(--border)", paddingTop: 12 }}>
+        <button
+          onClick={onHide}
+          title="Hide this provider from the list (keeps its credentials)"
+          style={{ padding: "5px 12px", background: "none", border: "1px solid var(--border)", borderRadius: 5, color: "var(--text-muted)", cursor: "pointer", fontSize: 12 }}
+        >
+          Hide provider
+        </button>
+        <p style={{ margin: "8px 0 0", fontSize: 11, color: "var(--text-dim)", lineHeight: 1.5 }}>
+          Hidden providers are removed from the model list. Unhide them from the bottom of the sidebar.
+        </p>
+      </div>
     </div>
   );
 }
 
 // ── API Key detail ────────────────────────────────────────────────────────────
 
-function ApiKeyDetail({ provider, onRefresh, onDelete }: { provider: ApiKeyProvider; onRefresh: () => void; onDelete: () => void }) {
+function ApiKeyDetail({ provider, onRefresh, onHide }: { provider: ApiKeyProvider; onRefresh: () => void; onHide: () => void }) {
   const [apiKey, setApiKey] = useState("");
   const [saving, setSaving] = useState(false);
   const [removing, setRemoving] = useState(false);
@@ -1712,50 +1724,28 @@ function ApiKeyDetail({ provider, onRefresh, onDelete }: { provider: ApiKeyProvi
         </button>
       )}
 
-      <DeleteProviderButton providerName={provider.displayName || provider.id} onDelete={onDelete} />
+      <div style={{ borderTop: "1px solid var(--border)", paddingTop: 12 }}>
+        <button
+          onClick={onHide}
+          title="Hide this provider from the list (keeps its credentials)"
+          style={{
+            alignSelf: "flex-start", padding: "5px 12px",
+            background: "none", border: "1px solid var(--border)",
+            borderRadius: 5, color: "var(--text-muted)",
+            cursor: "pointer", fontSize: 12,
+          }}
+        >
+          Hide provider
+        </button>
+        <p style={{ margin: "8px 0 0", fontSize: 11, color: "var(--text-dim)", lineHeight: 1.5 }}>
+          Hidden providers are removed from the model list. Unhide them from the bottom of the sidebar.
+        </p>
+      </div>
     </div>
   );
 }
 
 // ── Provider icon ─────────────────────────────────────────────────────────────
-
-function DeleteProviderButton({ providerName, onDelete }: { providerName: string; onDelete: () => void }) {
-  const [confirming, setConfirming] = useState(false);
-  return (
-    <div style={{ borderTop: "1px solid var(--border)", paddingTop: 12 }}>
-      {confirming ? (
-        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-          <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
-            Permanently delete provider "{providerName}"? oh-my-web will restart and it will no longer be available.
-          </span>
-          <button
-            onClick={onDelete}
-            style={{ padding: "5px 12px", background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.4)", borderRadius: 5, color: "#ef4444", cursor: "pointer", fontSize: 12, fontWeight: 600 }}
-          >
-            Yes, delete
-          </button>
-          <button
-            onClick={() => setConfirming(false)}
-            style={{ padding: "5px 12px", background: "none", border: "1px solid var(--border)", borderRadius: 5, color: "var(--text-muted)", cursor: "pointer", fontSize: 12 }}
-          >
-            Cancel
-          </button>
-        </div>
-      ) : (
-        <button
-          onClick={() => setConfirming(true)}
-          title="Permanently delete this provider"
-          style={{ padding: "5px 12px", background: "none", border: "1px solid rgba(239,68,68,0.3)", borderRadius: 5, color: "#ef4444", cursor: "pointer", fontSize: 12 }}
-        >
-          Delete provider
-        </button>
-      )}
-      <p style={{ margin: "8px 0 0", fontSize: 11, color: "var(--text-dim)", lineHeight: 1.5 }}>
-        Permanently removes this provider from oh-my-web — its API key / OAuth credentials and the environment configuration feeding it. The service restarts automatically.
-      </p>
-    </div>
-  );
-}
 
 function ProviderIcon({ id, size }: { id: string; size: number }) {
   const pi = PROVIDER_ICONS[id];
@@ -2091,25 +2081,17 @@ export function ModelsConfig({ onClose }: { onClose: () => void }) {
   }, [config]);
 
   const providers = Object.entries(config.providers ?? {});
-  const [deletedProviders, setDeletedProviders] = useState<Set<string>>(new Set());
-  const activeOAuth = oauthProviders.filter((p) => p.loggedIn && !deletedProviders.has(p.id));
-  const activeApiKey = apiKeyProviders.filter((p) => p.configured && !deletedProviders.has(p.id));
-  const visibleProviders = providers.filter(([pName]) => !deletedProviders.has(pName));
+  const hiddenProviders = new Set(Array.isArray(config.hiddenProviders) ? config.hiddenProviders : []);
+  const activeOAuth = oauthProviders.filter((p) => p.loggedIn && !hiddenProviders.has(p.id));
+  const activeApiKey = apiKeyProviders.filter((p) => p.configured && !hiddenProviders.has(p.id));
+  const visibleProviders = providers.filter(([pName]) => !hiddenProviders.has(pName));
+  const hiddenProviderList = Array.isArray(config.hiddenProviders) ? config.hiddenProviders : [];
 
-  // Load previously deleted providers (persisted outside models.json so pi never
-  // sees them). Deleting is permanent: the restart script also unsets the env
-  // vars that feed the provider, so it disappears from the runtime too.
-  useEffect(() => {
-    fetch("/api/models-config/deleted-providers")
-      .then((r) => r.json())
-      .then((d: { providers?: string[] }) => setDeletedProviders(new Set(d.providers ?? [])))
-      .catch(() => {});
-  }, []);
-
-  const deleteProviderPermanently = useCallback(async (name: string) => {
-    const next = new Set(deletedProviders);
-    next.add(name);
-    setDeletedProviders(next);
+  const hideProvider = useCallback((name: string) => {
+    setConfig((prev) => ({
+      ...prev,
+      hiddenProviders: Array.from(new Set([...(Array.isArray(prev.hiddenProviders) ? prev.hiddenProviders : []), name])),
+    }));
     setSelection((prev) => {
       if (!prev) return prev;
       if (prev.type === "oauth" && prev.providerId === name) return null;
@@ -2117,19 +2099,14 @@ export function ModelsConfig({ onClose }: { onClose: () => void }) {
       if (prev.type === "provider" && prev.name === name) return null;
       return prev;
     });
-    try {
-      await fetch("/api/models-config/deleted-providers", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ providers: Array.from(next) }),
-      });
-      // Restart so the runtime drops the provider for real (env unsets in
-      // start-oh-my-web.sh apply only on a fresh process).
-      void fetch("/api/system/restart", { method: "POST" });
-    } catch {
-      // Non-fatal: the in-memory filter still hides it until the next reload.
-    }
-  }, [deletedProviders]);
+  }, []);
+
+  const unhideProvider = useCallback((name: string) => {
+    setConfig((prev) => ({
+      ...prev,
+      hiddenProviders: (Array.isArray(prev.hiddenProviders) ? prev.hiddenProviders : []).filter((n) => n !== name),
+    }));
+  }, []);
 
   // Resolve current detail
   const detailContent = (() => {
@@ -2137,12 +2114,12 @@ export function ModelsConfig({ onClose }: { onClose: () => void }) {
     if (selection.type === "oauth") {
       const p = oauthProviders.find((p) => p.id === selection.providerId);
       if (!p) return null;
-      return <OAuthDetail key={p.id} provider={p} onRefresh={refreshAuthProviders} onDelete={() => deleteProviderPermanently(p.id)} />;
+      return <OAuthDetail key={p.id} provider={p} onRefresh={refreshAuthProviders} onHide={() => hideProvider(p.id)} />;
     }
     if (selection.type === "apikey") {
       const p = apiKeyProviders.find((p) => p.id === selection.providerId);
       if (!p) return null;
-      return <ApiKeyDetail key={p.id} provider={p} onRefresh={refreshAuthProviders} onDelete={() => deleteProviderPermanently(p.id)} />;
+      return <ApiKeyDetail key={p.id} provider={p} onRefresh={refreshAuthProviders} onHide={() => hideProvider(p.id)} />;
     }
     if (selection.type === "provider") {
       const provider = config.providers?.[selection.name];
@@ -2315,6 +2292,27 @@ export function ModelsConfig({ onClose }: { onClose: () => void }) {
                  + {t("i18n.addProvider")}
               </button>
             </div>
+
+            {/* Hidden providers — unhide entry point */}
+            {hiddenProviderList.length > 0 && (
+              <div style={{ borderTop: "1px solid var(--border)", padding: "6px 8px" }}>
+                <div style={{ fontSize: 10, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.4, padding: "2px 2px 4px" }}>
+                  Hidden providers
+                </div>
+                {hiddenProviderList.map((name) => (
+                  <div key={name} style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 2px" }}>
+                    <span style={{ fontSize: 11, fontFamily: "var(--font-mono)", color: "var(--text-muted)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</span>
+                    <button
+                      onClick={() => unhideProvider(name)}
+                      title="Show this provider again"
+                      style={{ padding: "2px 8px", background: "none", border: "1px solid var(--border)", borderRadius: 4, color: "var(--text-muted)", cursor: "pointer", fontSize: 10, flexShrink: 0 }}
+                    >
+                      Show
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Right: detail */}
