@@ -154,6 +154,7 @@ interface ProviderEntry {
 
 interface ModelsJson {
   providers?: Record<string, ProviderEntry>;
+  hiddenProviders?: string[];
 }
 
 type ModelTestState =
@@ -1323,7 +1324,7 @@ function ModelDetail({
 
 // ── OAuth detail ──────────────────────────────────────────────────────────────
 
-function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; onRefresh: () => void }) {
+function OAuthDetail({ provider, onRefresh, onHide }: { provider: OAuthProvider; onRefresh: () => void; onHide: () => void }) {
   const [loginState, setLoginState] = useState<OAuthLoginState>({ phase: "idle" });
   const { t } = useI18n();
   const [inputValue, setInputValue] = useState("");
@@ -1577,13 +1578,26 @@ function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; onRefre
           </>
         )}
       </div>
+
+      <div style={{ borderTop: "1px solid var(--border)", paddingTop: 12 }}>
+        <button
+          onClick={onHide}
+          title="Hide this provider from the list (keeps its credentials)"
+          style={{ padding: "5px 12px", background: "none", border: "1px solid var(--border)", borderRadius: 5, color: "var(--text-muted)", cursor: "pointer", fontSize: 12 }}
+        >
+          Hide provider
+        </button>
+        <p style={{ margin: "8px 0 0", fontSize: 11, color: "var(--text-dim)", lineHeight: 1.5 }}>
+          Hidden providers are removed from the model list. Unhide them from the bottom of the sidebar.
+        </p>
+      </div>
     </div>
   );
 }
 
 // ── API Key detail ────────────────────────────────────────────────────────────
 
-function ApiKeyDetail({ provider, onRefresh }: { provider: ApiKeyProvider; onRefresh: () => void }) {
+function ApiKeyDetail({ provider, onRefresh, onHide }: { provider: ApiKeyProvider; onRefresh: () => void; onHide: () => void }) {
   const [apiKey, setApiKey] = useState("");
   const [saving, setSaving] = useState(false);
   const [removing, setRemoving] = useState(false);
@@ -1709,6 +1723,24 @@ function ApiKeyDetail({ provider, onRefresh }: { provider: ApiKeyProvider; onRef
            {removing ? t("i18n.removing") : t("i18n.disconnect")}
         </button>
       )}
+
+      <div style={{ borderTop: "1px solid var(--border)", paddingTop: 12 }}>
+        <button
+          onClick={onHide}
+          title="Hide this provider from the list (keeps its credentials)"
+          style={{
+            alignSelf: "flex-start", padding: "5px 12px",
+            background: "none", border: "1px solid var(--border)",
+            borderRadius: 5, color: "var(--text-muted)",
+            cursor: "pointer", fontSize: 12,
+          }}
+        >
+          Hide provider
+        </button>
+        <p style={{ margin: "8px 0 0", fontSize: 11, color: "var(--text-dim)", lineHeight: 1.5 }}>
+          Hidden providers are removed from the model list. Unhide them from the bottom of the sidebar.
+        </p>
+      </div>
     </div>
   );
 }
@@ -2049,8 +2081,32 @@ export function ModelsConfig({ onClose }: { onClose: () => void }) {
   }, [config]);
 
   const providers = Object.entries(config.providers ?? {});
-  const activeOAuth = oauthProviders.filter((p) => p.loggedIn);
-  const activeApiKey = apiKeyProviders.filter((p) => p.configured);
+  const hiddenProviders = new Set(Array.isArray(config.hiddenProviders) ? config.hiddenProviders : []);
+  const activeOAuth = oauthProviders.filter((p) => p.loggedIn && !hiddenProviders.has(p.id));
+  const activeApiKey = apiKeyProviders.filter((p) => p.configured && !hiddenProviders.has(p.id));
+  const visibleProviders = providers.filter(([pName]) => !hiddenProviders.has(pName));
+  const hiddenProviderList = Array.isArray(config.hiddenProviders) ? config.hiddenProviders : [];
+
+  const hideProvider = useCallback((name: string) => {
+    setConfig((prev) => ({
+      ...prev,
+      hiddenProviders: Array.from(new Set([...(Array.isArray(prev.hiddenProviders) ? prev.hiddenProviders : []), name])),
+    }));
+    setSelection((prev) => {
+      if (!prev) return prev;
+      if (prev.type === "oauth" && prev.providerId === name) return null;
+      if (prev.type === "apikey" && prev.providerId === name) return null;
+      if (prev.type === "provider" && prev.name === name) return null;
+      return prev;
+    });
+  }, []);
+
+  const unhideProvider = useCallback((name: string) => {
+    setConfig((prev) => ({
+      ...prev,
+      hiddenProviders: (Array.isArray(prev.hiddenProviders) ? prev.hiddenProviders : []).filter((n) => n !== name),
+    }));
+  }, []);
 
   // Resolve current detail
   const detailContent = (() => {
@@ -2058,12 +2114,12 @@ export function ModelsConfig({ onClose }: { onClose: () => void }) {
     if (selection.type === "oauth") {
       const p = oauthProviders.find((p) => p.id === selection.providerId);
       if (!p) return null;
-      return <OAuthDetail key={p.id} provider={p} onRefresh={refreshAuthProviders} />;
+      return <OAuthDetail key={p.id} provider={p} onRefresh={refreshAuthProviders} onHide={() => hideProvider(p.id)} />;
     }
     if (selection.type === "apikey") {
       const p = apiKeyProviders.find((p) => p.id === selection.providerId);
       if (!p) return null;
-      return <ApiKeyDetail key={p.id} provider={p} onRefresh={refreshAuthProviders} />;
+      return <ApiKeyDetail key={p.id} provider={p} onRefresh={refreshAuthProviders} onHide={() => hideProvider(p.id)} />;
     }
     if (selection.type === "provider") {
       const provider = config.providers?.[selection.name];
@@ -2157,14 +2213,14 @@ export function ModelsConfig({ onClose }: { onClose: () => void }) {
               })}
 
               {/* Divider before custom providers, only when there are active managed providers */}
-              {(activeOAuth.length > 0 || activeApiKey.length > 0) && providers.length > 0 && (
+              {(activeOAuth.length > 0 || activeApiKey.length > 0) && visibleProviders.length > 0 && (
                 <div style={{ margin: "4px 8px", borderTop: "1px solid var(--border)" }} />
               )}
 
               {/* Custom providers */}
               {loading ? (
                  <div style={{ padding: "10px 8px", fontSize: 12, color: "var(--text-muted)" }}>{t("i18n.loading")}</div>
-              ) : providers.map(([pName, pData]) => {
+              ) : visibleProviders.map(([pName, pData]) => {
                 const isProviderSelected = selection?.type === "provider" && selection.name === pName;
                 const models = pData.models ?? [];
                 return (
@@ -2236,6 +2292,27 @@ export function ModelsConfig({ onClose }: { onClose: () => void }) {
                  + {t("i18n.addProvider")}
               </button>
             </div>
+
+            {/* Hidden providers — unhide entry point */}
+            {hiddenProviderList.length > 0 && (
+              <div style={{ borderTop: "1px solid var(--border)", padding: "6px 8px" }}>
+                <div style={{ fontSize: 10, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.4, padding: "2px 2px 4px" }}>
+                  Hidden providers
+                </div>
+                {hiddenProviderList.map((name) => (
+                  <div key={name} style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 2px" }}>
+                    <span style={{ fontSize: 11, fontFamily: "var(--font-mono)", color: "var(--text-muted)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</span>
+                    <button
+                      onClick={() => unhideProvider(name)}
+                      title="Show this provider again"
+                      style={{ padding: "2px 8px", background: "none", border: "1px solid var(--border)", borderRadius: 4, color: "var(--text-muted)", cursor: "pointer", fontSize: 10, flexShrink: 0 }}
+                    >
+                      Show
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Right: detail */}

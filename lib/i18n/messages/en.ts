@@ -142,6 +142,8 @@ export const enLocale: LocalePlugin = {
     "files.mention": "mention",
     "files.download": "Download file",
     "files.delete": "Delete file",
+    "files.downloadFolder": "Download folder (.zip)",
+    "files.uploadHere": "Upload files to this folder",
     "files.deleteConfirm": "Delete \"{name}\"? This cannot be undone.",
     "files.deleteFailed": "Failed to delete file",
     "files.confirmDelete": "Delete",

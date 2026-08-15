@@ -222,6 +222,7 @@ function TreeNode({
   gitStatusByPath,
   changedDirectoryPaths,
   onRequestRefresh,
+  onUploadToDir,
   t,
 }: {
   node: FileNode;
@@ -236,6 +237,7 @@ function TreeNode({
   gitStatusByPath: Map<string, GitFileStatus>;
   changedDirectoryPaths: Set<string>;
   onRequestRefresh?: () => void;
+  onUploadToDir?: (dirPath: string) => void;
   t: Translate;
 }) {
   const open = expandedPaths.has(node.fullPath);
@@ -485,12 +487,41 @@ function TreeNode({
             </button>
           )
         )}
-        {hovered && !node.isDir && !confirmingDelete && (
+        {hovered && node.isDir && !confirmingDelete && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onUploadToDir?.(node.fullPath); }}
+            title={t("files.uploadHere")}
+            style={{
+              position: "absolute",
+              right: 52,
+              top: "50%",
+              transform: "translateY(-50%)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 4,
+              padding: "0 5px",
+              height: 20,
+              background: "var(--bg-panel)",
+              border: "1px solid var(--border)",
+              borderRadius: 4,
+              color: "var(--text-muted)",
+              cursor: "pointer",
+            }}
+          >
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="17 8 12 3 7 8" />
+              <line x1="12" y1="3" x2="12" y2="15" />
+            </svg>
+          </button>
+        )}
+        {hovered && !confirmingDelete && (
           <a
             href={`/api/files/${encodeFilePathForApi(node.fullPath)}?type=download`}
             download
             onClick={(e) => e.stopPropagation()}
-            title={t("files.download")}
+            title={node.isDir ? t("files.downloadFolder") : t("files.download")}
             style={{
               position: "absolute",
               right: 4,
@@ -538,6 +569,7 @@ function TreeNode({
               gitStatusByPath={gitStatusByPath}
               changedDirectoryPaths={changedDirectoryPaths}
               onRequestRefresh={onRequestRefresh}
+              onUploadToDir={onUploadToDir}
               t={t}
             />
           ))}
@@ -635,6 +667,7 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
   const [pendingConflict, setPendingConflict] = useState<PendingConflict | null>(null);
   const prevCwdRef = useRef<string | null>(null);
   const uploadInputRef = useRef<HTMLInputElement>(null);
+  const uploadTargetDirRef = useRef<string | null>(null);
   const refreshToken = `${refreshKey ?? 0}:${treeRefreshKey}`;
   const uploadBusy = uploadPhase !== "idle";
 
@@ -670,14 +703,14 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
     setTreeRefreshKey((key) => key + 1);
   }, []);
 
-  const applyUploadResult = useCallback((data: UploadResponse) => {
+  const applyUploadResult = useCallback((data: UploadResponse, destination?: string) => {
     const uploaded = data.uploaded ?? [];
     const skipped = data.skipped ?? [];
     const errors = data.errors ?? [];
     setUploadSummary({ uploaded, skipped, errors });
 
     if (uploaded.length > 0) {
-      setHighlightedPaths(new Set(uploaded.map((name) => joinFilePath(cwd, name))));
+      setHighlightedPaths(new Set(uploaded.map((name) => joinFilePath(destination ?? cwd, name))));
       setTreeRefreshKey((key) => key + 1);
     }
   }, [cwd]);
@@ -685,6 +718,7 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
   const performUpload = useCallback(async (
     files: File[],
     strategy: UploadConflictStrategy,
+    targetDir?: string,
   ) => {
     setPendingConflict(null);
     setUploadError(null);
@@ -692,7 +726,8 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
     setUploadPhase("uploading");
 
     try {
-      const { status, data } = await uploadFiles(cwd, files, strategy, setUploadProgress);
+      const destination = targetDir ?? cwd;
+      const { status, data } = await uploadFiles(destination, files, strategy, setUploadProgress);
       if (status === 409 && data.conflicts?.length) {
         setPendingConflict({
           files,
@@ -705,7 +740,7 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
         throw new Error(data.error ?? `Upload failed (HTTP ${status})`);
       }
       setUploadProgress(100);
-      applyUploadResult(data);
+      applyUploadResult(data, targetDir ?? cwd);
     } catch (uploadFailure) {
       setUploadError(uploadFailure instanceof Error ? uploadFailure.message : String(uploadFailure));
     } finally {
@@ -713,8 +748,9 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
     }
   }, [applyUploadResult, cwd]);
 
-  const prepareUpload = useCallback(async (files: File[]) => {
+  const prepareUpload = useCallback(async (files: File[], targetDir?: string) => {
     if (files.length === 0 || uploadBusy) return;
+    const destination = targetDir ?? cwd;
     setUploadSummary(null);
     setHighlightedPaths(new Set());
     setPendingConflict(null);
@@ -724,7 +760,7 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
 
     try {
       const res = await fetch(
-        `/api/files/${encodeFilePathForApi(cwd)}?type=upload-check`,
+        `/api/files/${encodeFilePathForApi(destination)}?type=upload-check`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -743,7 +779,7 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
         return;
       }
 
-      await performUpload(files, "error");
+      await performUpload(files, "error", destination);
     } catch (uploadFailure) {
       setUploadError(uploadFailure instanceof Error ? uploadFailure.message : String(uploadFailure));
     } finally {
@@ -754,8 +790,15 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
   const handleUploadInput = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files ?? []);
     event.target.value = "";
-    void prepareUpload(files);
+    const targetDir = uploadTargetDirRef.current;
+    uploadTargetDirRef.current = null;
+    void prepareUpload(files, targetDir ?? undefined);
   }, [prepareUpload]);
+
+  const handleUploadToDir = useCallback((dirPath: string) => {
+    uploadTargetDirRef.current = dirPath;
+    if (!uploadBusy) uploadInputRef.current?.click();
+  }, [uploadBusy]);
 
   useImperativeHandle(ref, () => ({
     openUploadPicker() {
@@ -990,6 +1033,7 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
                 gitStatusByPath={gitStatusByPath}
                 changedDirectoryPaths={changedDirectoryPaths}
                 onRequestRefresh={handleRequestRefresh}
+                onUploadToDir={handleUploadToDir}
                 t={t}
               />
             ))

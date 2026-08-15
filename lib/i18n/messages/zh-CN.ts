@@ -142,6 +142,8 @@ export const zhCNLocale: LocalePlugin = {
     "files.mention": "提及",
     "files.download": "下载文件",
     "files.delete": "删除文件",
+    "files.downloadFolder": "下载文件夹 (.zip)",
+    "files.uploadHere": "上传文件到此文件夹",
     "files.deleteConfirm": "删除 \"{name}\"？此操作无法撤销。",
     "files.deleteFailed": "删除文件失败",
     "files.confirmDelete": "删除",

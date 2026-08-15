@@ -265,15 +265,75 @@ export async function DELETE(
     } catch {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
+    if (stat.isDirectory()) {
+      fs.rmSync(filePath, { recursive: true, force: true });
+      return NextResponse.json({ success: true, removed: "directory" });
+    }
     if (!stat.isFile()) {
       return NextResponse.json({ error: "Not a file" }, { status: 400 });
     }
 
     fs.unlinkSync(filePath);
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ success: true, removed: "file" });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 });
   }
+}
+
+const MAX_DIRECTORY_ZIP_BYTES = 500 * 1024 * 1024; // 500MB
+
+async function downloadDirectoryAsZip(dirPath: string): Promise<Response> {
+  const JSZip = (await import("jszip")).default;
+  const zip = new JSZip();
+  const rootName = path.basename(dirPath) || "folder";
+  let totalBytes = 0;
+
+  const walk = (dir: string, zipDir: InstanceType<typeof JSZip>) => {
+    let entries: fs.Dirent[] = [];
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      if (entry.isSymbolicLink()) continue;
+      if (entry.isDirectory()) {
+        if (IGNORED_NAMES.has(entry.name)) continue;
+        walk(path.join(dir, entry.name), zipDir.folder(entry.name)!);
+      } else if (entry.isFile()) {
+        if (IGNORED_SUFFIXES.some((suffix) => entry.name.endsWith(suffix))) continue;
+        let buffer: Buffer;
+        try {
+          buffer = fs.readFileSync(path.join(dir, entry.name));
+        } catch {
+          continue;
+        }
+        totalBytes += buffer.length;
+        if (totalBytes > MAX_DIRECTORY_ZIP_BYTES) {
+          throw new Error("ZIP_LIMIT_EXCEEDED");
+        }
+        zipDir.file(entry.name, buffer);
+      }
+    }
+  };
+
+  try {
+    walk(dirPath, zip.folder(rootName)!);
+  } catch (error) {
+    if (error instanceof Error && error.message === "ZIP_LIMIT_EXCEEDED") {
+      return NextResponse.json({ error: "Folder too large to download (>500MB)" }, { status: 413 });
+    }
+    throw error;
+  }
+
+  const buffer = await zip.generateAsync({ type: "nodebuffer", compression: "DEFLATE" });
+  return new Response(new Uint8Array(buffer), {
+    headers: {
+      "Content-Type": "application/zip",
+      "Content-Disposition": `attachment; filename="${rootName}.zip"`,
+      "Content-Length": String(buffer.length),
+    },
+  });
 }
 
 function createFileBodyStream(filePath: string, range?: { start: number; end: number }): ReadableStream<Uint8Array> {
@@ -515,6 +575,9 @@ export async function GET(
     }
 
     if (type === "download") {
+      if (stat?.isDirectory()) {
+        return downloadDirectoryAsZip(filePath);
+      }
       if (!stat?.isFile()) {
         return NextResponse.json({ error: "Not a file" }, { status: 400 });
       }
