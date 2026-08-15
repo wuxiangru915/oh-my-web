@@ -1410,3 +1410,19 @@ span.linenumber {
     font-size: 16px !important;
   }
 }
+
+/* File tree expand/collapse: gentle fade-slide so children don't pop in abruptly */
+.file-tree-children {
+  animation: file-tree-reveal 0.16s ease-out;
+  transform-origin: top;
+}
+@keyframes file-tree-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(-2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

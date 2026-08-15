@@ -553,7 +553,7 @@ function TreeNode({
         )}
       </div>
       {node.isDir && open && (
-        <div>
+        <div className="file-tree-children">
           {children.map((child) => (
             <TreeNode
               key={child.fullPath}
