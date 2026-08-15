@@ -769,12 +769,28 @@ export function AppShell() {
   }, [fileTabs]);
 
   const handleViewFullHistory = useCallback(() => {
-    if (!selectedSession) return;
-    window.open(
-      `/api/sessions/${encodeURIComponent(selectedSession.id)}/export?inline=1`,
-      "_blank",
-      "noopener,noreferrer",
-    );
+    const openHistory = (session: SessionInfo) => {
+      window.open(
+        `/api/sessions/${encodeURIComponent(session.id)}/export?inline=1`,
+        "_blank",
+        "noopener,noreferrer",
+      );
+    };
+    if (selectedSession) {
+      openHistory(selectedSession);
+      return;
+    }
+    // No session selected yet (fresh load before restore): open the most
+    // recently modified saved session's history instead of doing nothing.
+    void fetch("/api/sessions")
+      .then((r) => (r.ok ? (r.json() as Promise<{ sessions: SessionInfo[] }>) : null))
+      .then((d) => {
+        const recent = (d?.sessions ?? [])
+          .filter((s) => !s.transient)
+          .sort((a, b) => (b.modified ?? "").localeCompare(a.modified ?? ""))[0];
+        if (recent) openHistory(recent);
+      })
+      .catch(() => {});
   }, [selectedSession]);
 
   // Show chat area if a session is selected, or if we have a cwd to start a new session in
@@ -1087,8 +1103,7 @@ export function AppShell() {
             handleViewFullHistory();
             if (mobile) setMobileToolbarMoreOpen(true);
           }}
-          disabled={!selectedSession}
-          title={selectedSession ? translate("history.full") : translate("history.unsaved")}
+          title={selectedSession ? translate("history.full") : translate("history.label")}
           aria-label={translate("history.full")}
           style={{
             display: "flex",
@@ -1102,21 +1117,19 @@ export function AppShell() {
             border: "none",
             borderTop: "2px solid transparent",
             borderRight: "1px solid var(--border)",
-            color: selectedSession ? "var(--text-muted)" : "var(--text-dim)",
-            cursor: selectedSession ? "pointer" : "not-allowed",
-            opacity: selectedSession ? 1 : 0.45,
+            color: "var(--text-muted)",
+            cursor: "pointer",
             flexShrink: 0,
             fontSize: 11,
             whiteSpace: "nowrap",
             transition: "color 0.1s, background 0.1s, opacity 0.1s",
           }}
           onMouseEnter={(event) => {
-            if (!selectedSession) return;
             event.currentTarget.style.color = "var(--text)";
             event.currentTarget.style.background = "var(--bg-hover)";
           }}
           onMouseLeave={(event) => {
-            event.currentTarget.style.color = selectedSession ? "var(--text-muted)" : "var(--text-dim)";
+            event.currentTarget.style.color = "var(--text-muted)";
             event.currentTarget.style.background = "none";
           }}
           data-mobile-toolbar-action={mobile ? "history" : undefined}
@@ -2058,6 +2071,26 @@ export function AppShell() {
               onCloseTab={handleCloseFileTab}
             />
           </div>
+          <button
+            type="button"
+            onClick={() => setRightPanelOpen(false)}
+            aria-controls="file-panel"
+            aria-expanded={rightPanelOpen}
+            title={translate("files.hidePanel")}
+            aria-label={translate("files.hidePanel")}
+            style={{
+              display: "flex", alignItems: "center", justifyContent: "center",
+              width: TOP_BAR_ICON_BUTTON_SIZE, height: TOP_BAR_ICON_BUTTON_SIZE, padding: 0,
+              background: "var(--bg-selected)", border: "none", borderLeft: "1px solid var(--border)",
+              color: "var(--text)", cursor: "pointer", flexShrink: 0, transition: "color 0.12s",
+            }}
+            onMouseEnter={(event) => { event.currentTarget.style.color = "var(--accent)"; }}
+            onMouseLeave={(event) => { event.currentTarget.style.color = "var(--text)"; }}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <rect x="3" y="3" width="18" height="18" rx="2" /><line x1="15" y1="3" x2="15" y2="21" />
+            </svg>
+          </button>
         </div>
 
         {/* Only the active viewer is mounted. Lightweight per-tab state is restored on activation. */}
