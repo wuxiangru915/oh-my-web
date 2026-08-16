@@ -1684,7 +1684,7 @@ export function AppShell() {
               {renderSessionStatsButton(false)}
             </>
           )}
-          {!isMobile && renderMainFileToggle(false)}
+          {!isMobile && !rightPanelOpen && renderMainFileToggle(false)}
           {isMobile && (
             <BranchNavigator
               tree={branchTree}
