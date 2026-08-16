@@ -602,7 +602,7 @@ export function ChatWindow({ session, sessionRunning, newSessionCwd, newSessionD
               }}
             >
               <div style={{ display: "flex", alignItems: "baseline", gap: isMobile ? 7 : 10, minWidth: 0, flex: 1, lineHeight: 1.4, overflow: "hidden" }}>
-                <span style={{ fontSize: 22, color: "var(--text)", fontWeight: 700, letterSpacing: 0, flexShrink: 0, whiteSpace: "nowrap" }}>pi agent</span>
+                <span style={{ fontSize: 22, color: "var(--text)", fontWeight: 700, letterSpacing: 0, flexShrink: 0, whiteSpace: "nowrap" }}>oh-my-web</span>
               </div>
             </div>
             <NoticeShelf notices={notices} align="right" />
