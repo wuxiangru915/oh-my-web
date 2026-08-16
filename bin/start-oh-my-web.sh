@@ -37,7 +37,7 @@ case "$MODE" in
     npm run dev
     ;;
   build)
-    npm run build
+    NEXT_PUBLIC_APP_VERSION="$(date +%s)" npm run build
     ;;
   start)
     npm run start
