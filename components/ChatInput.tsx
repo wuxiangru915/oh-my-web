@@ -1478,7 +1478,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         flexShrink: 0,
         background: "transparent",
         padding: "0 16px 8px",
-        paddingRight: isMobile ? 16 : 16,
+        paddingRight: isMobile ? 16 : 52,
       }}
     >
       {/* Hidden file input */}

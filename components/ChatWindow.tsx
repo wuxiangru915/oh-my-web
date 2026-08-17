@@ -7,6 +7,7 @@ import { asBracketedPaste, toTerminalKeyData } from "@/lib/terminal-input";
 import { countToolCallBlocks, getAssistantErrorMessage, getDisplayableAssistantBlocks, splitFinalAssistantBlocks } from "@/lib/message-display";
 import { extractTurnWrittenFiles, type WrittenFile } from "@/lib/turn-written-files";
 import { MessageView } from "./MessageView";
+import { ChatMinimap, useMessageRefs } from "./ChatMinimap";
 import { ChatInput, type ChatInputHandle } from "./ChatInput";
 import { ExtensionStatusBar } from "./ExtensionStatusBar";
 import { useI18n } from "@/hooks/useI18n";
@@ -64,7 +65,6 @@ function phaseLabel(phase: AgentPhase, t: (key: string, params?: Record<string, 
 
 const CHAT_MINIMAP_WIDTH = 36;
 const CHAT_COLUMN_PADDING = 16;
-const CHAT_INPUT_RIGHT_PADDING = CHAT_COLUMN_PADDING + CHAT_MINIMAP_WIDTH;
 
 function hasFinalAssistantAnswer(message: AgentMessage): boolean {
   if (message.role !== "assistant") return false;
@@ -347,7 +347,21 @@ export function ChatWindow({ session, sessionRunning, newSessionCwd, newSessionD
     }
     return history.reverse();
   }, [messages]);
-  const messageRefs = useRef<(HTMLDivElement | null)[]>([]);
+
+  const messageRefs = useMessageRefs(visibleMessages.length);
+  const visibleRefIndexByMessage = useMemo(() => {
+    const map = new Map<number, number>();
+    let refIdx = 0;
+    messages.forEach((msg, idx) => {
+      if (msg.role === "user" || msg.role === "assistant") {
+        map.set(idx, refIdx++);
+      }
+    });
+    return map;
+  }, [messages]);
+  const revealHistoryForMinimap = useCallback(() => {
+    setVisibleCount((current) => Math.max(current, messages.length * 2));
+  }, [messages.length]);
 
   const isEmptyNew = isNew && messages.length === 0 && !streamState.isStreaming && !sessionBusy;
   const hasStreamingContent = Boolean(streamState.streamingMessage?.content.length);
@@ -646,14 +660,6 @@ export function ChatWindow({ session, sessionRunning, newSessionCwd, newSessionD
                 if (isGroupAnchor(messages[i])) { lastAnchorIdx = i; break; }
               }
 
-              const visibleRefIndexByMessage = new Map<number, number>();
-              let refIdx = 0;
-              messages.forEach((msg, idx) => {
-                if (msg.role === "user" || msg.role === "assistant") {
-                  visibleRefIndexByMessage.set(idx, refIdx++);
-                }
-              });
-
               const attachVisibleRef = (idx: number, refIndex: number) => (el: HTMLDivElement | null) => {
                 messageRefs.current[refIndex] = el;
                 if (idx === lastUserIdx) { (lastUserMsgRef as { current: HTMLDivElement | null }).current = el; }
@@ -851,6 +857,16 @@ export function ChatWindow({ session, sessionRunning, newSessionCwd, newSessionD
             </div>
           </div>
         </div>
+        {isMobile ? null : (
+          <ChatMinimap
+            messages={messages}
+            streamingMessage={streamState.streamingMessage}
+            scrollContainer={scrollContainerRef}
+            messageRefs={messageRefs}
+            visibleRefIndexByMessage={visibleRefIndexByMessage}
+            onRevealHistory={revealHistoryForMinimap}
+          />
+        )}
       </div>
 
       <div className="relative">
