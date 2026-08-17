@@ -154,24 +154,62 @@ export function ChatMinimap({
   const dragStartScrollTopRef = useRef(0);
 
   // Measure marker positions and scroll thumb
-  const updateLayout = useCallback(() => {
+  // Resolve a turn's DOM element once (shared by markers, active sync, jump-to)
+  const findTurnEl = useCallback((turn: ChatTurn): HTMLElement | null => {
+    const refs = messageRefs.current;
+    if (visibleRefIndexByMessage) {
+      const refIdx = visibleRefIndexByMessage.get(turn.userIdx);
+      if (typeof refIdx === "number" && refs[refIdx]) {
+        return refs[refIdx] as HTMLElement | null;
+      }
+    }
+    return (refs[turn.userIdx] as HTMLElement | null) ?? null;
+  }, [messageRefs, visibleRefIndexByMessage]);
+
+  // Marker positions are CONTENT-absolute: they do not change on scroll.
+  // Compute them only when the message list changes (one batched rect pass),
+  // never inside the scroll handler.
+  const computeMarkers = useCallback(() => {
+    const scrollEl = scrollContainer.current;
+    const minimapEl = containerRef.current;
+    if (!scrollEl || !minimapEl || turns.length === 0) return;
+    const scrollHeight = scrollEl.scrollHeight;
+    const trackHeight = minimapEl.clientHeight;
+    const availableHeight = trackHeight - (TRACK_PADDING_TOP + TRACK_PADDING_BOTTOM);
+
+    const positions = turns.map((turn, index) => {
+      const el = findTurnEl(turn);
+      if (el && scrollHeight > 0) {
+        const scrollRect = scrollEl.getBoundingClientRect();
+        const elRect = el.getBoundingClientRect();
+        const elementAbsoluteTop = elRect.top - scrollRect.top + scrollEl.scrollTop;
+        const ratio = Math.max(0, Math.min(1, elementAbsoluteTop / Math.max(1, scrollHeight)));
+        return TRACK_PADDING_TOP + ratio * availableHeight;
+      }
+      // Fallback interpolation if element is lazy-unrendered
+      const fallbackRatio = turns.length > 1 ? index / (turns.length - 1) : 0.5;
+      return TRACK_PADDING_TOP + fallbackRatio * availableHeight;
+    });
+
+    setMarkerPositions(positions);
+  }, [turns, scrollContainer, findTurnEl]);
+
+  // Scroll-driven updates: thumb + active-turn sync. Pure math against the
+  // cached marker positions - zero layout reads, so no reflow on scroll.
+  const updateScrollState = useCallback(() => {
     const scrollEl = scrollContainer.current;
     const minimapEl = containerRef.current;
     if (!scrollEl || !minimapEl || turns.length === 0) {
       setThumbState({ top: 0, height: 0, visible: false });
       return;
     }
-
     const scrollHeight = scrollEl.scrollHeight;
     const clientHeight = scrollEl.clientHeight;
     const scrollTop = scrollEl.scrollTop;
     const trackHeight = minimapEl.clientHeight;
-
     const scrollableDistance = scrollHeight - clientHeight;
-    const isScrollable = scrollableDistance > 10;
 
-    // Calculate scroll thumb
-    if (isScrollable && trackHeight > 0) {
+    if (scrollableDistance > 10 && trackHeight > 0) {
       const thumbHeight = Math.max(28, (clientHeight / scrollHeight) * trackHeight);
       const availableTrack = trackHeight - thumbHeight;
       const thumbTop = (scrollTop / scrollableDistance) * availableTrack;
@@ -184,103 +222,60 @@ export function ChatMinimap({
       setThumbState({ top: 0, height: 0, visible: false });
     }
 
-    // Calculate marker positions
-    const refs = messageRefs.current;
-    const availableHeight = trackHeight - (TRACK_PADDING_TOP + TRACK_PADDING_BOTTOM);
-
-    const positions = turns.map((turn, index) => {
-      let el: HTMLElement | null = null;
-
-      // Try finding DOM element via visibleRefIndexByMessage
-      if (visibleRefIndexByMessage) {
-        const refIdx = visibleRefIndexByMessage.get(turn.userIdx);
-        if (typeof refIdx === "number" && refs[refIdx]) {
-          el = refs[refIdx];
+    if (markerPositions.length === turns.length) {
+      const availableHeight = trackHeight - (TRACK_PADDING_TOP + TRACK_PADDING_BOTTOM);
+      const focusRatio = (scrollTop + clientHeight * 0.35) / Math.max(1, scrollHeight);
+      const focusY = TRACK_PADDING_TOP + Math.max(0, Math.min(1, focusRatio)) * availableHeight;
+      let closest = 0;
+      let minDist = Infinity;
+      for (let i = 0; i < markerPositions.length; i++) {
+        const dist = Math.abs(markerPositions[i] - focusY);
+        if (dist < minDist) {
+          minDist = dist;
+          closest = i;
         }
       }
-
-      // Fallback: direct index scan
-      if (!el && refs[turn.userIdx]) {
-        el = refs[turn.userIdx];
-      }
-
-      if (el && scrollHeight > 0) {
-        const scrollRect = scrollEl.getBoundingClientRect();
-        const elRect = el.getBoundingClientRect();
-        const elementAbsoluteTop = elRect.top - scrollRect.top + scrollEl.scrollTop;
-        const ratio = Math.max(0, Math.min(1, elementAbsoluteTop / Math.max(1, scrollHeight)));
-        return TRACK_PADDING_TOP + ratio * availableHeight;
-      }
-
-      // Fallback interpolation if element is lazy-unrendered
-      const fallbackRatio = turns.length > 1 ? index / (turns.length - 1) : 0.5;
-      return TRACK_PADDING_TOP + fallbackRatio * availableHeight;
-    });
-
-    setMarkerPositions(positions);
-
-    // Sync active turn with scroll position
-    const focusY = scrollTop + clientHeight * 0.35;
-    let closestIndex = 0;
-    let minDistance = Infinity;
-
-    turns.forEach((turn, index) => {
-      let el: HTMLElement | null = null;
-      if (visibleRefIndexByMessage) {
-        const refIdx = visibleRefIndexByMessage.get(turn.userIdx);
-        if (typeof refIdx === "number" && refs[refIdx]) {
-          el = refs[refIdx];
-        }
-      }
-      if (!el && refs[turn.userIdx]) el = refs[turn.userIdx];
-
-      if (el) {
-        const scrollRect = scrollEl.getBoundingClientRect();
-        const elRect = el.getBoundingClientRect();
-        const elementAbsoluteTop = elRect.top - scrollRect.top + scrollEl.scrollTop;
-        const dist = Math.abs(elementAbsoluteTop - focusY);
-        if (dist < minDistance) {
-          minDistance = dist;
-          closestIndex = index;
-        }
-      } else {
-        // Approximate distance
-        const approxTop = (index / Math.max(1, turns.length)) * scrollHeight;
-        const dist = Math.abs(approxTop - focusY);
-        if (dist < minDistance) {
-          minDistance = dist;
-          closestIndex = index;
-        }
-      }
-    });
-
-    setActiveTurnIndex(closestIndex);
-  }, [scrollContainer, messageRefs, turns, visibleRefIndexByMessage]);
+      setActiveTurnIndex(closest);
+    }
+  }, [turns.length, markerPositions, scrollContainer]);
 
   useEffect(() => {
     const scrollEl = scrollContainer.current;
     if (!scrollEl) return;
 
+    // rAF-throttled scroll handler: at most one update per frame
+    let rafId: number | null = null;
     const onScroll = () => {
-      updateLayout();
+      if (rafId !== null) return;
+      rafId = requestAnimationFrame(() => {
+        rafId = null;
+        updateScrollState();
+      });
     };
 
     scrollEl.addEventListener("scroll", onScroll, { passive: true });
-    const ro = new ResizeObserver(() => updateLayout());
+    const ro = new ResizeObserver(() => computeMarkers());
     ro.observe(scrollEl);
 
-    updateLayout();
+    computeMarkers();
+    updateScrollState();
 
     return () => {
       scrollEl.removeEventListener("scroll", onScroll);
       ro.disconnect();
+      if (rafId !== null) cancelAnimationFrame(rafId);
     };
-  }, [scrollContainer, updateLayout]);
+  }, [scrollContainer, computeMarkers, updateScrollState]);
 
   useEffect(() => {
-    const timer = setTimeout(() => updateLayout(), 60);
+    // Re-measure markers only when the message list changes (one rect pass);
+    // streaming text growth keeps existing markers' positions stable.
+    const timer = setTimeout(() => {
+      computeMarkers();
+      updateScrollState();
+    }, 60);
     return () => clearTimeout(timer);
-  }, [messages.length, streamingMessage, updateLayout]);
+  }, [messages.length, streamingMessage, computeMarkers, updateScrollState]);
 
   const scrollToTurn = useCallback((turnIndex: number) => {
     const scrollEl = scrollContainer.current;
@@ -289,28 +284,12 @@ export function ChatMinimap({
     const turn = turns[turnIndex];
     if (!turn) return;
 
-    let el: HTMLElement | null = null;
-    const refs = messageRefs.current;
-    if (visibleRefIndexByMessage) {
-      const refIdx = visibleRefIndexByMessage.get(turn.userIdx);
-      if (typeof refIdx === "number" && refs[refIdx]) {
-        el = refs[refIdx];
-      }
-    }
-    if (!el && refs[turn.userIdx]) el = refs[turn.userIdx];
+    let el = findTurnEl(turn);
 
     if (!el) {
       onRevealHistory?.();
       setTimeout(() => {
-        const retryRefs = messageRefs.current;
-        let retryEl: HTMLElement | null = null;
-        if (visibleRefIndexByMessage) {
-          const refIdx = visibleRefIndexByMessage.get(turn.userIdx);
-          if (typeof refIdx === "number" && retryRefs[refIdx]) {
-            retryEl = retryRefs[refIdx];
-          }
-        }
-        if (!retryEl && retryRefs[turn.userIdx]) retryEl = retryRefs[turn.userIdx];
+        const retryEl = findTurnEl(turn);
         if (retryEl) {
           retryEl.scrollIntoView({ behavior: "smooth", block: "start" });
         }
@@ -319,7 +298,7 @@ export function ChatMinimap({
     }
 
     el.scrollIntoView({ behavior: "smooth", block: "start" });
-  }, [scrollContainer, turns, messageRefs, visibleRefIndexByMessage, onRevealHistory]);
+  }, [scrollContainer, turns, findTurnEl, onRevealHistory]);
 
   const handleMouseEnterRail = useCallback((turnIdx: number) => {
     if (hoverLeaveTimerRef.current) {
