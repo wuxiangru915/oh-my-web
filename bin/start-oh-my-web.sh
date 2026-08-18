@@ -30,6 +30,12 @@ done
 
 export PI_CODING_AGENT_DIR="$ISOLATED_AGENT_DIR"
 
+# zai-coding-cn (GLM/智谱) key 兼容：若用户已有 GLM_API_KEY（智谱旧名），
+# 自动映射到 pi 识别的 ZAI_CODING_CN_API_KEY，无需重新配置。
+if [[ -z "${ZAI_CODING_CN_API_KEY:-}" && -n "${GLM_API_KEY:-}" ]]; then
+  export ZAI_CODING_CN_API_KEY="$GLM_API_KEY"
+fi
+
 MODE="${1:-dev}"
 cd "$(dirname "$0")/.."
 
