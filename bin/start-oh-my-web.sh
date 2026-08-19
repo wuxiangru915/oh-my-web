@@ -9,7 +9,7 @@
 # 但 sessions 历史不会共享，避免任何写入冲突影响原版。
 set -euo pipefail
 
-ISOLATED_AGENT_DIR="${PI_CODING_AGENT_DIR:-$HOME/.pi/oh-my-web-agent}"
+ISOLATED_AGENT_DIR="${PI_CODING_AGENT_DIR:-$HOME/.project/omw-agent}"
 SOURCE_AGENT_DIR="$HOME/.pi/agent"
 
 mkdir -p "$ISOLATED_AGENT_DIR"
