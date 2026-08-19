@@ -6,7 +6,7 @@
 # 端口仍使用 30142（见 package.json scripts）。
 set -euo pipefail
 
-export PI_CODING_AGENT_DIR="${PI_CODING_AGENT_DIR:-$HOME/.project/omw-agent}"
+export PI_CODING_AGENT_DIR="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}"
 
 MODE="${1:-dev}"
 cd "$(dirname "$0")/.."
