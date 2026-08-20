@@ -2,6 +2,7 @@ import { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { NextResponse } from "next/server";
 import { invalidateModelsCache } from "@/lib/models-cache";
 import { removeStoredCredentialIfType, storeProviderCredential } from "@/lib/provider-credential-store";
+import { syncSettingsForProviderAuth } from "@/lib/models-config-store";
 
 export const dynamic = "force-dynamic";
 
@@ -51,6 +52,7 @@ export async function POST(req: Request, { params }: Params) {
     // unbounded network catalog refresh. Store the returned credential
     // directly so a slow catalog cannot leave the save request hanging.
     await storeProviderCredential(provider, credential);
+    syncSettingsForProviderAuth(provider, "added");
     invalidateModelsCache();
     return NextResponse.json({ success: true });
   } catch (error) {
@@ -69,6 +71,7 @@ export async function DELETE(_req: Request, { params }: Params) {
         { status: 409 },
       );
     }
+    syncSettingsForProviderAuth(provider, "removed");
     invalidateModelsCache();
     return NextResponse.json({ success: true });
   } catch (error) {

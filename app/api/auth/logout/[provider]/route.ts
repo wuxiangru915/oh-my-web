@@ -1,6 +1,7 @@
 import { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { invalidateModelsCache } from "@/lib/models-cache";
 import { removeStoredCredentialIfType } from "@/lib/provider-credential-store";
+import { syncSettingsForProviderAuth } from "@/lib/models-config-store";
 
 export const dynamic = "force-dynamic";
 
@@ -17,6 +18,7 @@ export async function POST(
   if (removal.status === "type_mismatch") {
     return Response.json({ error: `${provider} is authenticated with an API key, not OAuth` }, { status: 409 });
   }
+  syncSettingsForProviderAuth(provider, "removed");
   invalidateModelsCache();
   return Response.json({ ok: true });
 }

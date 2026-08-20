@@ -5,9 +5,11 @@ const OFFLINE_URL = "/offline.html";
 const PRECACHE_URLS = [
   OFFLINE_URL,
   "/manifest.webmanifest",
+  "/icons/icon.svg",
   "/icons/icon-192.png",
   "/icons/icon-512.png",
   "/icons/apple-touch-icon.png",
+  "/icons/pi-agent.png",
 ];
 
 self.addEventListener("install", (event) => {

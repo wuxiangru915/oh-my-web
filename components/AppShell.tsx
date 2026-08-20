@@ -2131,7 +2131,17 @@ export function AppShell() {
         </div>
       </div>
     </div>
-    {modelsConfigOpen && <ModelsConfig onClose={() => { setModelsConfigOpen(false); setModelsRefreshKey((k) => k + 1); }} />}
+    {modelsConfigOpen && (
+      <ModelsConfig
+        onClose={() => {
+          setModelsConfigOpen(false);
+          setModelsRefreshKey((k) => k + 1);
+        }}
+        onModelsChange={() => {
+          setModelsRefreshKey((k) => k + 1);
+        }}
+      />
+    )}
     {projectTrustDialogOpen && projectTrustCwd && (
       <ProjectTrustDialog
         cwd={projectTrustCwd}

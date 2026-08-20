@@ -1516,6 +1516,15 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     const nextModelList = d.modelList ?? [];
     setModelList(nextModelList);
     if (isNew && !sessionIdRef.current) {
+      if (newSessionModelOverrideRef.current) {
+        const stillExists = nextModelList.some(
+          (m) => m.provider === newSessionModelOverrideRef.current?.provider && m.id === newSessionModelOverrideRef.current?.modelId,
+        );
+        if (!stillExists) {
+          newSessionModelOverrideRef.current = null;
+          setNewSessionModel(null);
+        }
+      }
       const match = d.defaultModel
         ? nextModelList.find((m) => m.id === d.defaultModel?.modelId && m.provider === d.defaultModel?.provider)
         : undefined;

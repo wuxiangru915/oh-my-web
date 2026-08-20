@@ -146,6 +146,7 @@ interface ProviderEntry {
   baseUrl?: string;
   api?: string;
   apiKey?: string;
+  proxy?: string;
   headers?: Record<string, string>;
   compat?: Record<string, unknown>;
   models?: ModelEntry[];
@@ -447,6 +448,14 @@ function ProviderDetail({ name, provider, onChange, onRename, onDelete, onAddMod
 
       <Field label="API">
         <Select value={provider.api ?? "openai-completions"} onChange={(v) => set("api", v)} options={API_OPTIONS} required />
+      </Field>
+
+      <Field label="Proxy / 代理地址 (可选)">
+        <TextInput value={provider.proxy ?? ""} onChange={(v) => set("proxy", v || undefined)}
+          placeholder="http://127.0.0.1:7890" mono />
+        <span style={{ fontSize: 10, color: "var(--text-dim)", marginTop: 2 }}>
+          仅该提供商的请求经由此代理，不影响其他模型直连。留空则直接连接网络。
+        </span>
       </Field>
 
       <Field label="Headers">
@@ -1323,7 +1332,15 @@ function ModelDetail({
 
 // ── OAuth detail ──────────────────────────────────────────────────────────────
 
-function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; onRefresh: () => void }) {
+function OAuthDetail({
+  provider,
+  onRefresh,
+  onModelsChange,
+}: {
+  provider: OAuthProvider;
+  onRefresh: () => void;
+  onModelsChange?: () => void;
+}) {
   const [loginState, setLoginState] = useState<OAuthLoginState>({ phase: "idle" });
   const { t } = useI18n();
   const [inputValue, setInputValue] = useState("");
@@ -1385,6 +1402,7 @@ function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; onRefre
         es.close();
         setLoginState({ phase: "success" });
         onRefresh();
+        onModelsChange?.();
       } else if (data.type === "error") {
         es.close();
         setLoginState({ phase: "error", message: data.message! });
@@ -1397,13 +1415,14 @@ function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; onRefre
       es.close();
       setLoginState((prev) => prev.phase === "success" ? prev : { phase: "error", message: "Connection lost" });
     };
-  }, [provider.id, onRefresh]);
+  }, [provider.id, onRefresh, onModelsChange]);
 
   const handleLogout = useCallback(async () => {
     await fetch(`/api/auth/logout/${encodeURIComponent(provider.id)}`, { method: "POST" });
     setLoginState({ phase: "idle" });
     onRefresh();
-  }, [provider.id, onRefresh]);
+    onModelsChange?.();
+  }, [provider.id, onRefresh, onModelsChange]);
 
   const submitCode = useCallback(async (token: string, code: string) => {
     if (!code.trim()) return;
@@ -1583,7 +1602,15 @@ function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; onRefre
 
 // ── API Key detail ────────────────────────────────────────────────────────────
 
-function ApiKeyDetail({ provider, onRefresh }: { provider: ApiKeyProvider; onRefresh: () => void }) {
+function ApiKeyDetail({
+  provider,
+  onRefresh,
+  onModelsChange,
+}: {
+  provider: ApiKeyProvider;
+  onRefresh: () => void;
+  onModelsChange?: () => void;
+}) {
   const [apiKey, setApiKey] = useState("");
   const [saving, setSaving] = useState(false);
   const [removing, setRemoving] = useState(false);
@@ -1617,13 +1644,14 @@ function ApiKeyDetail({ provider, onRefresh }: { provider: ApiKeyProvider; onRef
         setSavedOk(true);
         setTimeout(() => setSavedOk(false), 2000);
         onRefresh();
+        onModelsChange?.();
       }
     } catch (e) {
       setError(String(e));
     } finally {
       setSaving(false);
     }
-  }, [apiKey, provider.id, onRefresh]);
+  }, [apiKey, provider.id, onRefresh, onModelsChange]);
 
   const handleRemove = useCallback(async () => {
     setRemoving(true);
@@ -1631,14 +1659,18 @@ function ApiKeyDetail({ provider, onRefresh }: { provider: ApiKeyProvider; onRef
     try {
       const res = await fetch(`/api/auth/api-key/${encodeURIComponent(provider.id)}`, { method: "DELETE" });
       const d = await res.json() as { success?: boolean; error?: string };
-      if (!res.ok || d.error) setError(d.error ?? `HTTP ${res.status}`);
-      else onRefresh();
+      if (!res.ok || d.error) {
+        setError(d.error ?? `HTTP ${res.status}`);
+      } else {
+        onRefresh();
+        onModelsChange?.();
+      }
     } catch (e) {
       setError(String(e));
     } finally {
       setRemoving(false);
     }
-  }, [provider.id, onRefresh]);
+  }, [provider.id, onRefresh, onModelsChange]);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -1891,7 +1923,13 @@ function AddProviderPicker({
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export function ModelsConfig({ onClose }: { onClose: () => void }) {
+export function ModelsConfig({
+  onClose,
+  onModelsChange,
+}: {
+  onClose: () => void;
+  onModelsChange?: () => void;
+}) {
   const isMobile = useIsMobile();
   const { t } = useI18n();
   const [config, setConfig] = useState<ModelsJson>({ providers: {} });
@@ -2039,14 +2077,19 @@ export function ModelsConfig({ onClose }: { onClose: () => void }) {
         body: JSON.stringify(config),
       });
       const d = await res.json() as { success?: boolean; error?: string };
-      if (!res.ok || d.error) setSaveError(d.error ?? `HTTP ${res.status}`);
-      else { setSavedOk(true); setTimeout(() => setSavedOk(false), 2000); }
+      if (!res.ok || d.error) {
+        setSaveError(d.error ?? `HTTP ${res.status}`);
+      } else {
+        setSavedOk(true);
+        setTimeout(() => setSavedOk(false), 2000);
+        onModelsChange?.();
+      }
     } catch (e) {
       setSaveError(String(e));
     } finally {
       setSaving(false);
     }
-  }, [config]);
+  }, [config, onModelsChange]);
 
   const providers = Object.entries(config.providers ?? {});
   const activeOAuth = oauthProviders.filter((p) => p.loggedIn);
@@ -2058,12 +2101,26 @@ export function ModelsConfig({ onClose }: { onClose: () => void }) {
     if (selection.type === "oauth") {
       const p = oauthProviders.find((p) => p.id === selection.providerId);
       if (!p) return null;
-      return <OAuthDetail key={p.id} provider={p} onRefresh={refreshAuthProviders} />;
+      return (
+        <OAuthDetail
+          key={p.id}
+          provider={p}
+          onRefresh={refreshAuthProviders}
+          onModelsChange={onModelsChange}
+        />
+      );
     }
     if (selection.type === "apikey") {
       const p = apiKeyProviders.find((p) => p.id === selection.providerId);
       if (!p) return null;
-      return <ApiKeyDetail key={p.id} provider={p} onRefresh={refreshAuthProviders} />;
+      return (
+        <ApiKeyDetail
+          key={p.id}
+          provider={p}
+          onRefresh={refreshAuthProviders}
+          onModelsChange={onModelsChange}
+        />
+      );
     }
     if (selection.type === "provider") {
       const provider = config.providers?.[selection.name];

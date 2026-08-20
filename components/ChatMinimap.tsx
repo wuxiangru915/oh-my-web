@@ -146,6 +146,8 @@ export function ChatMinimap({
     visible: false,
   });
   const [markerPositions, setMarkerPositions] = useState<number[]>([]);
+  const markerPositionsRef = useRef<number[]>([]);
+  markerPositionsRef.current = markerPositions;
 
   const containerRef = useRef<HTMLDivElement | null>(null);
   const hoverLeaveTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -191,7 +193,12 @@ export function ChatMinimap({
       return TRACK_PADDING_TOP + fallbackRatio * availableHeight;
     });
 
-    setMarkerPositions(positions);
+    setMarkerPositions((prev) => {
+      if (prev.length === positions.length && prev.every((p, idx) => Math.abs(p - positions[idx]) < 0.5)) {
+        return prev;
+      }
+      return positions;
+    });
   }, [turns, scrollContainer, findTurnEl]);
 
   // Scroll-driven updates: thumb + active-turn sync. Pure math against the
@@ -222,14 +229,15 @@ export function ChatMinimap({
       setThumbState({ top: 0, height: 0, visible: false });
     }
 
-    if (markerPositions.length === turns.length) {
+    const currentPositions = markerPositionsRef.current;
+    if (currentPositions.length === turns.length) {
       const availableHeight = trackHeight - (TRACK_PADDING_TOP + TRACK_PADDING_BOTTOM);
       const focusRatio = (scrollTop + clientHeight * 0.35) / Math.max(1, scrollHeight);
       const focusY = TRACK_PADDING_TOP + Math.max(0, Math.min(1, focusRatio)) * availableHeight;
       let closest = 0;
       let minDist = Infinity;
-      for (let i = 0; i < markerPositions.length; i++) {
-        const dist = Math.abs(markerPositions[i] - focusY);
+      for (let i = 0; i < currentPositions.length; i++) {
+        const dist = Math.abs(currentPositions[i] - focusY);
         if (dist < minDist) {
           minDist = dist;
           closest = i;
@@ -237,7 +245,7 @@ export function ChatMinimap({
       }
       setActiveTurnIndex(closest);
     }
-  }, [turns.length, markerPositions, scrollContainer]);
+  }, [turns.length, scrollContainer]);
 
   useEffect(() => {
     const scrollEl = scrollContainer.current;
@@ -284,7 +292,7 @@ export function ChatMinimap({
     const turn = turns[turnIndex];
     if (!turn) return;
 
-    let el = findTurnEl(turn);
+    const el = findTurnEl(turn);
 
     if (!el) {
       onRevealHistory?.();
