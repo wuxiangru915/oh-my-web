@@ -183,6 +183,9 @@ type Selection =
 
 const API_OPTIONS = ["openai-completions", "openai-responses", "anthropic-messages", "google-generative-ai"] as const;
 
+// Catalog auto-fill after discovery import: how many lookups run concurrently per batch.
+const AUTO_FILL_CONCURRENCY = 5;
+
 // ── Form field helpers ────────────────────────────────────────────────────────
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
@@ -1896,35 +1899,49 @@ export function ModelsConfig({
     });
   }, []);
 
+  // Aborts in-flight catalog auto-fills when this panel unmounts.
+  const autoFillAbortRef = useRef<AbortController | null>(null);
+  useEffect(() => {
+    autoFillAbortRef.current = new AbortController();
+    return () => { autoFillAbortRef.current?.abort(); };
+  }, []);
+
   // After discovery imports models, best-effort fill their empty fields from the
   // models.dev catalog — the same fill as the manual catalog button in ModelDetail.
+  // Lookups run in bounded-concurrency batches and stop on unmount.
   const autoFillImportedModels = useCallback((providerName: string, baseUrl: string | undefined, modelIds: string[]) => {
+    const signal = autoFillAbortRef.current?.signal;
+    const ids = modelIds.map((id) => id.trim()).filter(Boolean);
+    if (!signal || ids.length === 0) return;
+    const fillOne = async (id: string): Promise<void> => {
+      try {
+        const params = new URLSearchParams({ q: id, provider: providerName, limit: "1" });
+        if (baseUrl?.trim()) params.set("baseUrl", baseUrl.trim());
+        const res = await fetch(`/api/models-config/catalog?${params}`, { signal });
+        if (!res.ok) return;
+        const data = await res.json() as { recommendation?: ModelCatalogRecommendation };
+        const preset = data.recommendation?.preset;
+        if (!preset) return;
+        setConfig((prev) => {
+          const provider = prev.providers?.[providerName];
+          const models = provider?.models;
+          if (!models) return prev;
+          const idx = models.findIndex((model) => model.id === id);
+          if (idx === -1) return prev;
+          const filled = fillEmptyModelFields(models[idx], preset);
+          if (filled.appliedCount === 0) return prev;
+          const nextModels = [...models];
+          nextModels[idx] = filled.model;
+          return { ...prev, providers: { ...(prev.providers ?? {}), [providerName]: { ...provider, models: nextModels } } };
+        });
+      } catch {
+        // Catalog fill is best-effort; skip models whose lookup fails or is aborted.
+      }
+    };
     void (async () => {
-      for (const id of modelIds) {
-        if (!id.trim()) continue;
-        try {
-          const params = new URLSearchParams({ q: id, provider: providerName, limit: "1" });
-          if (baseUrl?.trim()) params.set("baseUrl", baseUrl.trim());
-          const res = await fetch(`/api/models-config/catalog?${params}`);
-          if (!res.ok) continue;
-          const data = await res.json() as { recommendation?: ModelCatalogRecommendation };
-          const preset = data.recommendation?.preset;
-          if (!preset) continue;
-          setConfig((prev) => {
-            const provider = prev.providers?.[providerName];
-            const models = provider?.models;
-            if (!models) return prev;
-            const idx = models.findIndex((model) => model.id === id);
-            if (idx === -1) return prev;
-            const filled = fillEmptyModelFields(models[idx], preset);
-            if (filled.appliedCount === 0) return prev;
-            const nextModels = [...models];
-            nextModels[idx] = filled.model;
-            return { ...prev, providers: { ...(prev.providers ?? {}), [providerName]: { ...provider, models: nextModels } } };
-          });
-        } catch {
-          // Catalog fill is best-effort; skip models whose lookup fails.
-        }
+      for (let i = 0; i < ids.length; i += AUTO_FILL_CONCURRENCY) {
+        if (signal.aborted) return;
+        await Promise.allSettled(ids.slice(i, i + AUTO_FILL_CONCURRENCY).map(fillOne));
       }
     })();
   }, []);
