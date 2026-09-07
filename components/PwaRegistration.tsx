@@ -4,7 +4,27 @@ import { useEffect } from "react";
 
 export function PwaRegistration() {
   useEffect(() => {
-    if (process.env.NODE_ENV !== "production" || !("serviceWorker" in navigator)) {
+    if (process.env.NODE_ENV !== "production") {
+      if ("serviceWorker" in navigator) {
+        void navigator.serviceWorker.getRegistrations().then((registrations) => {
+          for (const registration of registrations) {
+            void registration.unregister();
+          }
+        });
+      }
+      if ("caches" in window) {
+        void caches.keys().then((keys) => {
+          for (const key of keys) {
+            if (key.startsWith("pi-web-")) {
+              void caches.delete(key);
+            }
+          }
+        });
+      }
+      return;
+    }
+
+    if (!("serviceWorker" in navigator)) {
       return;
     }
 

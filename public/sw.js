@@ -56,6 +56,10 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
+  if (CACHE_VERSION === "dev" || url.pathname.includes("/turbopack-") || url.pathname.includes("/development/")) {
+    return;
+  }
+
   const isStaticAsset =
     url.pathname.startsWith("/_next/static/") ||
     PRECACHE_URLS.includes(url.pathname);
