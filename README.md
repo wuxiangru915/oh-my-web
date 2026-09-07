@@ -12,7 +12,7 @@ A personal fork of [pi-web](https://github.com/agegr/pi-web) — a local browser
 - **Mention chips in the composer** — `/skill:`, `/command`, and `@file` mentions are highlighted as blue chips so calls read as distinct from the prompt text. The chips render as cards in the sent message (files are clickable).
 - **AI Studio-style message navigator** — a collapsible side panel lists user/assistant/tool messages with icons and active-message highlight.
 - **Inline delete confirm** — the file explorer's delete button confirms in place (no browser `confirm()` dialog).
-- **Simplified chrome** — minimal header, `pi-<version>` logo, clean skill styling.
+- **Simplified chrome** — minimal header, new pi version notification with one-click update, clean skill styling.
 
 ## Quick Start
 

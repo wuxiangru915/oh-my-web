@@ -66,6 +66,22 @@ export interface AppUpdateResponse {
   releaseUrl: string;
 }
 
+export interface PiUpdateResponse {
+  currentVersion: string;
+  cliVersion?: string | null;
+  latestVersion: string;
+  updateAvailable: boolean;
+}
+
+export interface PiUpdatePerformResponse {
+  success: boolean;
+  previousVersion: string;
+  newVersion: string;
+  cliUpdated?: boolean;
+  message?: string;
+  error?: string;
+}
+
 export type PluginScope = "global" | "project";
 export type PluginResourceKind = "extension" | "skill" | "prompt" | "theme";
 

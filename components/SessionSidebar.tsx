@@ -2,6 +2,7 @@
 
 import { useEffect, useLayoutEffect, useState, useCallback, useMemo, useRef, type CSSProperties, type ReactNode } from "react";
 import type { SessionInfo } from "@/lib/types";
+import type { PiUpdatePerformResponse, PiUpdateResponse } from "@/lib/api-types";
 import { loadExplorerOpen, saveExplorerOpen } from "@/lib/file-explorer-state";
 import { dispatchSessionRowContextMenu } from "@/lib/session-row-context-menu";
 import { skillExpansionToCommand } from "@/lib/slash-display";
@@ -305,37 +306,19 @@ function buildSessionTree(sessions: SessionInfo[]): SessionTreeNode[] {
 }
 
 function PiWebTitle() {
-  const [showVersion, setShowVersion] = useState(false);
-  const revertTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const target = showVersion ? `pi-${process.env.NEXT_PUBLIC_PI_VERSION ?? "0.0.0"}` : "oh-my-web";
-
-  const handleClick = useCallback(() => {
-    if (revertTimerRef.current) clearTimeout(revertTimerRef.current);
-
-    const next = !showVersion;
-    setShowVersion(next);
-
-    if (next) {
-      revertTimerRef.current = setTimeout(() => setShowVersion(false), 3000);
-    }
-  }, [showVersion]);
-
-  useEffect(() => () => { if (revertTimerRef.current) clearTimeout(revertTimerRef.current); }, []);
-
   return (
-    <button
-      onClick={handleClick}
+    <span
       style={{
-        background: "none", border: "none", padding: 0, cursor: "default",
-        fontWeight: 700, fontSize: 15, letterSpacing: "-0.01em",
-        color: showVersion ? "var(--accent)" : "var(--text)",
+        fontWeight: 700,
+        fontSize: 15,
+        letterSpacing: "-0.01em",
+        color: "var(--text)",
         fontFamily: "var(--font-mono)",
-        minWidth: "6ch",
+        userSelect: "none",
       }}
     >
-      {target}
-    </button>
+      oh-my-web
+    </span>
   );
 }
 
@@ -381,6 +364,56 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   const sessionRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const explorerRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fileExplorerRef = useRef<FileExplorerHandle>(null);
+
+  // Pi version and update state
+  const [piUpdateInfo, setPiUpdateInfo] = useState<PiUpdateResponse | null>(null);
+  const [piUpdating, setPiUpdating] = useState(false);
+  const [piUpdateSuccess, setPiUpdateSuccess] = useState<string | null>(null);
+  const [piUpdateError, setPiUpdateError] = useState<string | null>(null);
+  const [piUpdateDismissed, setPiUpdateDismissed] = useState(false);
+
+  const loadPiUpdate = useCallback(async (force = false) => {
+    try {
+      const res = await fetch(`/api/pi-update${force ? "?force=true" : ""}`);
+      if (!res.ok) return;
+      const data = (await res.json()) as PiUpdateResponse;
+      setPiUpdateInfo(data);
+    } catch {
+      // Ignore update check failure
+    }
+  }, []);
+
+  useEffect(() => {
+    loadPiUpdate();
+  }, [loadPiUpdate]);
+
+  const handlePiUpdate = useCallback(async () => {
+    if (piUpdating) return;
+    setPiUpdating(true);
+    setPiUpdateError(null);
+    try {
+      const res = await fetch("/api/pi-update", { method: "POST" });
+      const data = (await res.json()) as PiUpdatePerformResponse;
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || data.message || "Update failed");
+      }
+      setPiUpdateSuccess(data.newVersion);
+      setPiUpdateInfo((prev) =>
+        prev
+          ? {
+              ...prev,
+              currentVersion: data.newVersion,
+              latestVersion: data.newVersion,
+              updateAvailable: false,
+            }
+          : null,
+      );
+    } catch (err) {
+      setPiUpdateError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setPiUpdating(false);
+    }
+  }, [piUpdating]);
 
   const loadSessions = useCallback(async (showLoading = false, force = false) => {
     try {
@@ -896,7 +929,26 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
         }}
       >
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-          <PiWebTitle />
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <PiWebTitle />
+            {piUpdateInfo?.updateAvailable && !piUpdateSuccess && (
+              <span
+                style={{
+                  fontSize: 10,
+                  fontWeight: 600,
+                  padding: "1px 6px",
+                  borderRadius: 10,
+                  background: "rgba(59, 130, 246, 0.15)",
+                  color: "var(--accent)",
+                  border: "1px solid rgba(59, 130, 246, 0.35)",
+                  lineHeight: 1.4,
+                }}
+                title={t("piUpdate.newVersionAvailable", { version: piUpdateInfo.latestVersion })}
+              >
+                v{piUpdateInfo.latestVersion}
+              </span>
+            )}
+          </div>
           <div style={{ display: "flex", gap: 6 }}>
             <button
               onClick={handleNewSession}
@@ -925,6 +977,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                 e.currentTarget.style.borderColor = "rgba(37,99,235,0.35)";
               }}
               onMouseLeave={(e) => {
+                if (!selectedCwd) return;
                 e.currentTarget.style.background = "var(--bg-hover)";
                 e.currentTarget.style.color = selectedCwd ? "var(--text-muted)" : "var(--text-dim)";
                 e.currentTarget.style.borderColor = "var(--border)";
@@ -977,6 +1030,115 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
             </button>
           </div>
         </div>
+
+        {/* Pi Update Notification & One-click Update */}
+        {(piUpdateInfo?.updateAvailable || piUpdateSuccess) && !piUpdateDismissed && (
+          <div
+            style={{
+              marginBottom: 10,
+              padding: "8px 10px",
+              borderRadius: 8,
+              background: piUpdateSuccess ? "rgba(34, 197, 94, 0.12)" : "rgba(59, 130, 246, 0.08)",
+              border: `1px solid ${piUpdateSuccess ? "rgba(34, 197, 94, 0.35)" : "rgba(59, 130, 246, 0.25)"}`,
+              fontSize: 12,
+              display: "flex",
+              flexDirection: "column",
+              gap: 6,
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+                {piUpdateSuccess ? (
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg>
+                ) : (
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                    <circle cx="12" cy="12" r="10" />
+                    <line x1="12" y1="8" x2="12" y2="12" />
+                    <line x1="12" y1="16" x2="12.01" y2="16" />
+                  </svg>
+                )}
+                <span style={{ fontWeight: 600, color: "var(--text)", fontSize: 11.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {piUpdateSuccess
+                    ? t("piUpdate.updateSuccess", { version: piUpdateSuccess })
+                    : t("piUpdate.newVersionAvailable", { version: piUpdateInfo?.latestVersion ?? "" })}
+                </span>
+              </div>
+              {!piUpdating && (
+                <button
+                  onClick={() => setPiUpdateDismissed(true)}
+                  style={{
+                    background: "none",
+                    border: "none",
+                    color: "var(--text-dim)",
+                    cursor: "pointer",
+                    padding: 2,
+                    display: "flex",
+                    alignItems: "center",
+                    borderRadius: 4,
+                  }}
+                  title={t("piUpdate.dismiss")}
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <line x1="18" y1="6" x2="6" y2="18" />
+                    <line x1="6" y1="6" x2="18" y2="18" />
+                  </svg>
+                </button>
+              )}
+            </div>
+
+            {!piUpdateSuccess && (
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginTop: 1 }}>
+                <span style={{ fontSize: 11, color: "var(--text-dim)" }}>
+                  {t("piUpdate.currentInstalled", { version: piUpdateInfo?.currentVersion ?? "" })}
+                </span>
+                <button
+                  onClick={handlePiUpdate}
+                  disabled={piUpdating}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 5,
+                    padding: "4px 10px",
+                    borderRadius: 6,
+                    fontSize: 11,
+                    fontWeight: 600,
+                    background: "var(--accent)",
+                    color: "#fff",
+                    border: "none",
+                    cursor: piUpdating ? "wait" : "pointer",
+                    opacity: piUpdating ? 0.8 : 1,
+                    boxShadow: "0 1px 2px rgba(0,0,0,0.1)",
+                  }}
+                >
+                  {piUpdating && (
+                    <svg
+                      width="11"
+                      height="11"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      style={{ animation: "spin 1s linear infinite" }}
+                    >
+                      <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+                    </svg>
+                  )}
+                  {piUpdating ? t("piUpdate.updating") : t("piUpdate.oneClickUpdate")}
+                </button>
+              </div>
+            )}
+
+            {piUpdateError && (
+              <div style={{ fontSize: 11, color: "var(--error, #ef4444)", marginTop: 2 }}>
+                {t("piUpdate.updateFailed", { error: piUpdateError })}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* CWD picker */}
         <div ref={dropdownRef} style={{ position: "relative" }}>
