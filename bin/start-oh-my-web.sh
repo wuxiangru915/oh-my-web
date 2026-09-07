@@ -17,7 +17,7 @@ LOG_FILE="/tmp/omw-main.log"
 PID_FILE="/tmp/omw-main.pid"
 
 find_pid() {
-  ss -tlnp 2>/dev/null | grep ":$PORT" | grep -oP 'pid=\K[0-9]+' | head -1
+  (ss -tlnp 2>/dev/null | grep ":$PORT" | grep -oP 'pid=\K[0-9]+' | head -1) || true
 }
 
 is_running() {
